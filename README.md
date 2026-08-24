@@ -1,3 +1,21 @@
-# Belma3qoul Web
+# belma3qoul-web
 
-New project — rebuild from scratch.
+مشروع مستقل جديد يجمع الصفحة التعريفية، صفحة المفاجأة، لوحة التحكم وواجهة API في تطبيق واحد.
+
+## التشغيل
+
+`npm install`
+
+`npm run build`
+
+`npm start`
+
+## المسارات
+
+- `/` الصفحة التعريفية
+- `/surprise` المفاجأة
+- `/admin` لوحة التحكم
+- `/api/health` فحص API
+- `/api/settings` إعدادات الموقع
+
+كلمة مرور لوحة التحكم الأولية: `admin123` ويجب تغيير نظام المصادقة قبل الاستخدام الإنتاجي.
