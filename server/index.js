@@ -5,118 +5,55 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const root = path.join(__dirname, '..');
-const dist = path.join(root, 'dist');
-const dataDir = path.join(root, 'data');
-const siteFile = path.join(dataDir, 'site.json');
-const promotionFile = path.join(dataDir, 'promotions.json');
-fs.mkdirSync(dataDir, { recursive: true });
-
-const siteDefaults = {
-  siteName: 'كل شيء بالمعقول', news: 'تابعوا أحدث منشورات المحل', featured: 'آخر المنشورات',
-  surpriseTitle: 'مفاجأتك بانتظارك 🎁', surpriseMessage: 'امسح QR واكتشف مفاجأتك.',
-  stats: { sales: 0, products: 0, customers: 0, stock: 0 }, links: [], updatedAt: new Date().toISOString()
-};
-const promotionDefaults = {
-  settings: { enabled: true, title: 'مفاجأتك بانتظارك 🎁', message: 'امسح QR واكتشف مفاجأتك.', attemptsPerVisitor: 1, campaignStart: null, campaignEnd: null },
-  prizes: [], plays: [], qrToken: '', updatedAt: null
-};
-
-function loadJson(file, fallback) {
-  try { return { ...fallback, ...JSON.parse(fs.readFileSync(file, 'utf8')) }; }
-  catch { fs.writeFileSync(file, JSON.stringify(fallback, null, 2)); return structuredClone(fallback); }
-}
-function saveJson(file, value) {
-  const temp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, JSON.stringify({ ...value, updatedAt: new Date().toISOString() }, null, 2), 'utf8');
-  fs.renameSync(temp, file);
-}
-let site = loadJson(siteFile, siteDefaults);
-let promotion = loadJson(promotionFile, promotionDefaults);
-if (!promotion.qrToken) { promotion.qrToken = crypto.randomBytes(24).toString('hex'); saveJson(promotionFile, promotion); }
-
-const sessions = new Map();
-const rateLimits = new Map();
-const isProduction = process.env.NODE_ENV === 'production';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (isProduction ? '' : 'admin123');
-const mime = { '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.ico':'image/x-icon' };
-const now = () => Date.now();
-const id = (prefix='id') => `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
-function send(res,status,body,type='text/plain; charset=utf-8',extra={}) {
-  res.writeHead(status, {'Content-Type': type,'Cache-Control': 'no-store','X-Content-Type-Options': 'nosniff','X-Frame-Options': 'SAMEORIGIN','Referrer-Policy': 'strict-origin-when-cross-origin',...extra});
-  res.end(body);
-}
-function json(res,status,obj) { send(res,status,JSON.stringify(obj),mime['.json']); }
-function serveFile(res,file) { if(!fs.existsSync(file)||!fs.statSync(file).isFile()) return false; const ext=path.extname(file).toLowerCase(); send(res,200,fs.readFileSync(file),mime[ext]||'application/octet-stream',{}); return true; }
-function readBody(req) { return new Promise((resolve,reject)=>{ let body=''; req.on('data',c=>{ body+=c; if(body.length>2_000_000){ reject(new Error('Payload too large')); req.destroy(); } }); req.on('end',()=>resolve(body)); req.on('error',reject); }); }
-function cookie(req,name) { return req.headers.cookie?.split(';').map(x=>x.trim()).find(x=>x.startsWith(`${name}=`))?.split('=').slice(1).join('='); }
-function auth(req) { const token=cookie(req,'belma3qoul_session'); return token && sessions.has(token) && sessions.get(token)>now(); }
-function setCookie(res,name,value,maxAge=86400) { const secure=isProduction?' Secure;':''; res.setHeader('Set-Cookie',`${name}=${value}; Path=/; HttpOnly; SameSite=Lax;${secure} Max-Age=${maxAge}`); }
-function visitorKey(req) { return cookie(req,'belma3qoul_visitor') || crypto.randomBytes(16).toString('hex'); }
-function campaignActive() { const s=promotion.settings; const t=now(); if(!s.enabled) return false; if(s.campaignStart && t < new Date(s.campaignStart).getTime()) return false; if(s.campaignEnd && t > new Date(s.campaignEnd).getTime()) return false; return true; }
-function pickPrize() { const available=promotion.prizes.filter(p=>p.enabled && Number(p.remaining)>0); if(!available.length)return null; const total=available.reduce((sum,p)=>sum+Math.max(0,Number(p.weight)||0),0); if(total<=0)return available[Math.floor(Math.random()*available.length)]; let cursor=Math.random()*total; for(const prize of available){cursor-=Math.max(0,Number(prize.weight)||0);if(cursor<=0)return prize;} return available.at(-1); }
-function resultFromPlay(play) { return play ? {id:play.prizeId,name:play.prizeName,type:play.prizeType,value:play.prizeValue,link:play.prizeLink||''} : null; }
-function visitorPlays(key) { return promotion.plays.filter(p=>p.visitorKey===key); }
-function rateLimit(req,key,limit=8,windowMs=60_000) {
-  const ip=(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').toString().split(',')[0].trim();
-  const idKey=`${key}:${ip}`; const t=now(); const entry=rateLimits.get(idKey);
-  if(!entry||t-entry.started>windowMs){rateLimits.set(idKey,{started:t,count:1});return true;}
-  entry.count+=1; return entry.count<=limit;
-}
-function cleanup() { const t=now(); for(const [k,v] of sessions) if(v<=t) sessions.delete(k); for(const [k,v] of rateLimits) if(t-v.started>60_000) rateLimits.delete(k); }
-setInterval(cleanup,60_000).unref();
-
-function qrResultPage() {
-  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#064b32"><title>مفاجأتك - بزار كل شيء بالمعقول"><style>*{box-sizing:border-box}body{margin:0;min-height:100svh;font-family:Tahoma,Arial,sans-serif;background:radial-gradient(circle at top,#0b704b,#064b32 55%,#043d29);display:grid;place-items:center;padding:20px;color:#15201b}.card{width:min(460px,100%);background:#fff;border:1px solid #c79a32;border-radius:24px;padding:32px 24px;text-align:center;box-shadow:0 20px 60px #0004}.gift{font-size:76px;line-height:1}.eyebrow{display:inline-block;color:#c79a32;font-weight:900;font-size:11px;letter-spacing:1px;margin:10px 0}.card h1{margin:5px 0;color:#064b32;font-size:28px}.value{font-size:20px;font-weight:900;color:#c79a32;margin:10px 0}.desc{color:#606a64;line-height:1.7;font-size:13px}.btn{display:inline-flex;align-items:center;justify-content:center;background:#064b32;color:#fff;text-decoration:none;border-radius:12px;padding:13px 20px;font-weight:900;margin-top:8px}.muted{color:#606a64;font-size:11px;margin-top:15px}.error{color:#b42318;background:#fff0f0;border-radius:10px;padding:10px}.loading{color:#064b32;font-weight:900}</style></head><body><main class="card" id="app"><div class="gift">🎁</div><span class="eyebrow">BELMA3QOUL • مفاجأة</span><h1>جاري كشف جائزتك…</h1><p class="loading">لحظة واحدة</p></main><script>async function run(){const app=document.getElementById('app');try{const r=await fetch('/api/promotion/play',{method:'POST'});const d=await r.json();if(!r.ok)throw new Error(d.error||'تعذر كشف الجائزة');const p=d.play?.prize;if(!p)throw new Error('تعذر قراءة الجائزة');app.innerHTML='<div class="gift">🎉</div><span class="eyebrow">BELMA3QOUL • مبروك</span><h1>'+escapeHtml(p.name)+'</h1><p class="value">'+escapeHtml(p.value||'')+'</p>'+(p.type==='link'&&p.link?'<a class="btn" href="'+encodeURI(p.link)+'" target="_blank" rel="noopener noreferrer">فتح رابط الجائزة ↗</a>':'')+'<p class="muted">احتفظ بهذه النتيجة عند الحاجة.</p>';}catch(e){app.innerHTML='<div class="gift">🎁</div><span class="eyebrow">BELMA3QOUL</span><h1>تعذر إظهار النتيجة</h1><p class="desc error">'+escapeHtml(e.message)+'</p><a class="btn" href="/">العودة إلى الموقع</a>';}}function escapeHtml(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c]));}run();</script></body></html>`;
-}
-
-const server=http.createServer(async(req,res)=>{
-  try {
-    const url=new URL(req.url,'http://localhost'); const pathname=decodeURIComponent(url.pathname);
-    if(req.method==='GET'&&pathname==='/api/health') return json(res,200,{ok:true,service:'belma3qoul-web',time:new Date().toISOString()});
-    if(req.method==='POST'&&pathname==='/api/auth/login'){
-      if(!ADMIN_PASSWORD)return json(res,503,{ok:false,error:'ADMIN_PASSWORD غير مضبوط على الخادم'});
-      if(!rateLimit(req,'login',8,60_000))return json(res,429,{ok:false,error:'محاولات دخول كثيرة، حاول لاحقاً'});
-      const body=JSON.parse(await readBody(req)||'{}');
-      if(typeof body.password!=='string'||body.password!==ADMIN_PASSWORD)return json(res,401,{ok:false,error:'بيانات الدخول غير صحيحة'});
-      const token=crypto.randomBytes(32).toString('hex');sessions.set(token,now()+86400000);setCookie(res,'belma3qoul_session',token);return json(res,200,{ok:true});
-    }
-    if(req.method==='POST'&&pathname==='/api/auth/logout'){const token=cookie(req,'belma3qoul_session');if(token)sessions.delete(token);setCookie(res,'belma3qoul_session','',0);return json(res,200,{ok:true});}
-    if(req.method==='GET'&&pathname==='/api/auth/me')return json(res,200,{authenticated:Boolean(auth(req))});
-    if(req.method==='GET'&&pathname==='/api/settings')return json(res,200,{...site,surpriseTitle:promotion.settings.title,surpriseMessage:promotion.settings.message});
-    if(req.method==='POST'&&pathname==='/api/settings'){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});const body=JSON.parse(await readBody(req)||'{}');for(const k of ['siteName','news','featured'])if(body[k]!==undefined)site[k]=String(body[k]);saveJson(siteFile,site);return json(res,200,{ok:true,data:site});}
-    if(req.method==='GET'&&pathname==='/api/stats')return json(res,200,{...site.stats,qrScans:promotion.plays.length,winners:promotion.plays.filter(p=>p.prizeType!=='message').length,remainingPrizes:promotion.prizes.reduce((n,p)=>n+Math.max(0,Number(p.remaining)||0),0)});
-    if(req.method==='GET'&&pathname==='/api/promotion/public')return json(res,200,{active:campaignActive(),title:promotion.settings.title,message:promotion.settings.message,attemptsPerVisitor:promotion.settings.attemptsPerVisitor});
-    if(req.method==='POST'&&pathname==='/api/promotion/play'){
-      if(cookie(req,'belma3qoul_qr_access')!=='1')return json(res,403,{ok:false,error:'يجب مسح رمز QR للدخول إلى المفاجأة'});
-      if(!campaignActive())return json(res,409,{ok:false,error:'لا توجد مسابقة نشطة حالياً'});
-      if(!rateLimit(req,'play',20,60_000))return json(res,429,{ok:false,error:'طلبات كثيرة، حاول بعد قليل'});
-      const key=visitorKey(req);const attempts=visitorPlays(key);const limit=Math.max(1,Number(promotion.settings.attemptsPerVisitor)||1);
-      if(attempts.length>=limit){const previous=attempts.at(-1);setCookie(res,'belma3qoul_visitor',key,31536000);return json(res,429,{ok:false,error:'لقد استنفدت محاولتك',play:{id:previous.id,prize:resultFromPlay(previous)}});}
-      const prize=pickPrize();if(!prize)return json(res,409,{ok:false,error:'انتهت جميع الجوائز'});prize.remaining=Math.max(0,Number(prize.remaining)-1);
-      const play={id:id('play'),visitorKey:key,prizeId:prize.id,prizeName:prize.name,prizeType:prize.type,prizeValue:prize.value,prizeLink:prize.link||'',createdAt:new Date().toISOString(),claimed:false};promotion.plays.push(play);saveJson(promotionFile,promotion);setCookie(res,'belma3qoul_visitor',key,31536000);return json(res,200,{ok:true,play:{id:play.id,prize:resultFromPlay(play)}});
-    }
-    if(req.method==='GET'&&pathname==='/api/qr'){
-      const target=`${url.origin}/qr-result?token=${encodeURIComponent(promotion.qrToken)}`;
-      const png=await QRCode.toBuffer(target,{type:'png',width:512,margin:2,errorCorrectionLevel:'H'});
-      return send(res,200,png,'image/png',{'Content-Length':png.length,'Cache-Control':'public, max-age=300'});
-    }
-    if(req.method==='GET'&&pathname==='/qr-result'){
-      if(url.searchParams.get('token')!==promotion.qrToken)return send(res,403,'QR غير صالح أو منتهي','text/plain; charset=utf-8');
-      setCookie(res,'belma3qoul_qr_access','1',600);
-      return send(res,200,qrResultPage(),'text/html; charset=utf-8');
-    }
-    if(req.method==='GET'&&pathname==='/surprise'&&!url.searchParams.get('token')) return send(res,302,'','text/plain; charset=utf-8',{Location:'/#qr'});
-    if(req.method==='GET'&&pathname==='/surprise'&&url.searchParams.get('token')===promotion.qrToken){ setCookie(res,'belma3qoul_qr_access','1',600); }
-    if(req.method==='GET'&&pathname==='/api/admin/promotion'){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});return json(res,200,promotion);}
-    if(req.method==='PUT'&&pathname==='/api/admin/promotion/settings'){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});const body=JSON.parse(await readBody(req)||'{}');promotion.settings={...promotion.settings,...Object.fromEntries(['enabled','title','message','attemptsPerVisitor','campaignStart','campaignEnd'].filter(k=>body[k]!==undefined).map(k=>[k,k==='attemptsPerVisitor'?Math.max(1,Number(body[k])||1):body[k]]))};saveJson(promotionFile,promotion);return json(res,200,{ok:true,data:promotion.settings});}
-    if(req.method==='POST'&&pathname==='/api/admin/prizes'){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});const b=JSON.parse(await readBody(req)||'{}');const q=Math.max(0,Number(b.quantity)||0);const prize={id:id('prize'),name:String(b.name||'جائزة جديدة'),type:String(b.type||'message'),value:String(b.value||''),quantity:q,remaining:q,enabled:b.enabled!==false,weight:Math.max(0,Number(b.weight)||0),link:String(b.link||'')};promotion.prizes.push(prize);saveJson(promotionFile,promotion);return json(res,201,{ok:true,data:prize});}
-    if(req.method==='PUT'&&pathname.startsWith('/api/admin/prizes/')){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});const prize=promotion.prizes.find(p=>p.id===pathname.split('/').at(-1));if(!prize)return json(res,404,{ok:false,error:'Prize not found'});const b=JSON.parse(await readBody(req)||'{}');for(const k of ['name','type','value','link'])if(b[k]!==undefined)prize[k]=String(b[k]);if(b.enabled!==undefined)prize.enabled=Boolean(b.enabled);if(b.weight!==undefined)prize.weight=Math.max(0,Number(b.weight)||0);if(b.quantity!==undefined){const q=Math.max(0,Number(b.quantity)||0);const used=Math.max(0,Number(prize.quantity)-Number(prize.remaining));prize.quantity=q;prize.remaining=Math.max(0,q-used);}saveJson(promotionFile,promotion);return json(res,200,{ok:true,data:prize});}
-    if(req.method==='DELETE'&&pathname.startsWith('/api/admin/prizes/')){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});promotion.prizes=promotion.prizes.filter(p=>p.id!==pathname.split('/').at(-1));saveJson(promotionFile,promotion);return json(res,200,{ok:true});}
-    if(req.method==='GET'&&pathname==='/api/admin/plays'){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});return json(res,200,promotion.plays.slice().reverse());}
-    if(req.method==='PUT'&&pathname.startsWith('/api/admin/plays/')){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});const play=promotion.plays.find(p=>p.id===pathname.split('/').at(-1));if(!play)return json(res,404,{ok:false,error:'Play not found'});const b=JSON.parse(await readBody(req)||'{}');if(b.claimed!==undefined)play.claimed=Boolean(b.claimed);saveJson(promotionFile,promotion);return json(res,200,{ok:true,data:play});}
-    const safe=path.normalize(pathname).replace(/^([.][.][\\/])+/, '');const file=path.join(dist,safe);if(pathname!=='/'&&serveFile(res,file))return;const index=path.join(dist,'index.html');if(serveFile(res,index))return;return send(res,503,'Production build not found');
-  }catch(err){return json(res,500,{ok:false,error:err.message||'Server error'});}
-});
+const __dirname=path.dirname(fileURLToPath(import.meta.url));
+const root=path.join(__dirname,'..');const dist=path.join(root,'dist');const dataDir=path.join(root,'data');const mediaDir=path.join(dataDir,'media');
+const siteFile=path.join(dataDir,'site.json');const promotionFile=path.join(dataDir,'promotions.json');fs.mkdirSync(mediaDir,{recursive:true});
+const siteDefaults={siteName:'كل شيء بالمعقول',news:'تابعوا أحدث منشورات المحل',featured:'آخر المنشورات',surpriseTitle:'مفاجأتك بانتظارك 🎁',surpriseMessage:'امسح QR واكتشف مفاجأتك.',stats:{sales:0,products:0,customers:0,stock:0},links:[],updatedAt:new Date().toISOString()};
+const promotionDefaults={settings:{enabled:true,title:'مفاجأتك بانتظارك 🎁',message:'امسح QR واكتشف مفاجأتك.',attemptsPerVisitor:1,campaignStart:null,campaignEnd:null},prizes:[],plays:[],qrToken:'',beforeMedia:'',winMedia:'',beforeEnabled:true,winEnabled:true,updatedAt:null};
+function load(file,fallback){try{return {...fallback,...JSON.parse(fs.readFileSync(file,'utf8'))};}catch{fs.writeFileSync(file,JSON.stringify(fallback,null,2));return structuredClone(fallback);}}
+function save(file,value){const tmp=`${file}.${process.pid}.tmp`;fs.writeFileSync(tmp,JSON.stringify({...value,updatedAt:new Date().toISOString()},null,2));fs.renameSync(tmp,file);}
+let site=load(siteFile,siteDefaults),promotion=load(promotionFile,promotionDefaults);if(!promotion.qrToken){promotion.qrToken=crypto.randomBytes(24).toString('hex');save(promotionFile,promotion);}
+const sessions=new Map(),limits=new Map();const production=process.env.NODE_ENV==='production';const ADMIN_PASSWORD=process.env.ADMIN_PASSWORD||(production?'':'admin123');
+const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif','.webp':'image/webp','.svg':'image/svg+xml'};const mediaTypes={'image/png':'png','image/jpeg':'jpg','image/gif':'gif','image/webp':'webp'};
+const now=()=>Date.now(),newId=(p='id')=>`${p}_${crypto.randomBytes(8).toString('hex')}`;
+function send(res,status,body,type='text/plain; charset=utf-8',extra={}){res.writeHead(status,{'Content-Type':type,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Frame-Options':'SAMEORIGIN','Referrer-Policy':'strict-origin-when-cross-origin',...extra});res.end(body);}
+function json(res,status,obj){send(res,status,JSON.stringify(obj),mime['.json']);}
+function file(res,filePath){if(!fs.existsSync(filePath)||!fs.statSync(filePath).isFile())return false;const ext=path.extname(filePath).toLowerCase();send(res,200,fs.readFileSync(filePath),mime[ext]||'application/octet-stream');return true;}
+function body(req){return new Promise((resolve,reject)=>{let s='';req.on('data',c=>{s+=c;if(s.length>12_000_000){reject(new Error('Payload too large'));req.destroy();}});req.on('end',()=>resolve(s));req.on('error',reject);});}
+function cookie(req,n){return req.headers.cookie?.split(';').map(x=>x.trim()).find(x=>x.startsWith(`${n}=`))?.split('=').slice(1).join('=');}
+function setCookie(res,n,v,maxAge=86400){res.setHeader('Set-Cookie',`${n}=${v}; Path=/; HttpOnly; SameSite=Lax;${production?' Secure;':''} Max-Age=${maxAge}`);}
+function auth(req){const t=cookie(req,'belma3qoul_session');return !!(t&&sessions.get(t)>now());}
+function rate(req,key,max=10,window=60000){const ip=String(req.headers['x-forwarded-for']||req.socket.remoteAddress||'x').split(',')[0];const k=key+':'+ip;const e=limits.get(k),t=now();if(!e||t-e.t>window){limits.set(k,{t,n:1});return true;}e.n++;return e.n<=max;}
+function active(){const s=promotion.settings,t=now();return !!s.enabled&&(!s.campaignStart||t>=new Date(s.campaignStart).getTime())&&(!s.campaignEnd||t<=new Date(s.campaignEnd).getTime());}
+function pick(){const a=promotion.prizes.filter(p=>p.enabled&&Number(p.remaining)>0);if(!a.length)return null;const total=a.reduce((n,p)=>n+Math.max(0,Number(p.weight)||0),0);if(total<=0)return a[Math.floor(Math.random()*a.length)];let r=Math.random()*total;for(const p of a){r-=Math.max(0,Number(p.weight)||0);if(r<=0)return p;}return a.at(-1);}
+function result(p){return p?{id:p.prizeId,name:p.prizeName,type:p.prizeType,value:p.prizeValue,link:p.prizeLink||''}:null;}
+function visitor(req){return cookie(req,'belma3qoul_visitor')||crypto.randomBytes(16).toString('hex');}
+function mediaSave(data,type){const ext=mediaTypes[type];if(!ext)throw new Error('نوع الملف غير مدعوم');const raw=String(data||'').replace(/^data:[^;]+;base64,/,'');const b=Buffer.from(raw,'base64');if(!b.length||b.length>8*1024*1024)throw new Error('حجم الملف يجب أن يكون بين 1B و8MB');const name=`${crypto.randomBytes(12).toString('hex')}.${ext}`;fs.writeFileSync(path.join(mediaDir,name),b);return `/media/${name}`;}
+function qrPage(){return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>مبروك - كل شيء بالمعقول</title><style>*{box-sizing:border-box}body{margin:0;min-height:100svh;background:radial-gradient(circle at top,#0c754f,#063d2b);font-family:Tahoma,Arial,sans-serif;display:grid;place-items:center;padding:18px;color:#17231e}.card{position:relative;width:min(560px,100%);background:#fff;border-radius:28px;padding:28px;text-align:center;box-shadow:0 25px 80px #0006;border:1px solid #d6aa43;overflow:hidden}.gift{font-size:70px}.ey{color:#b98b24;font-weight:900;font-size:12px}.card h1{color:#064b32;margin:10px 0;font-size:30px}.value{font-size:21px;font-weight:900;color:#b98b24}.btn{display:inline-block;margin-top:12px;background:#064b32;color:#fff;padding:13px 20px;border-radius:12px;text-decoration:none;font-weight:900}.media{display:block;width:100%;max-height:55vh;object-fit:contain;border-radius:18px;margin:16px auto}.fire{position:absolute;inset:0;pointer-events:none;overflow:hidden}.s{position:absolute;width:5px;height:5px;border-radius:50%;animation:b 1s ease-out forwards;box-shadow:0 0 12px 3px currentColor}@keyframes b{to{transform:translate(var(--x),var(--y)) scale(.1);opacity:0}}</style></head><body><main class="card" id="app"><div class="gift">🎁</div><span class="ey">BELMA3QOUL • مفاجأة</span><h1>جاري كشف جائزتك…</h1></main><script>const esc=s=>String(s??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));async function run(){const a=document.getElementById('app');try{const pub=await fetch('/api/promotion/public').then(r=>r.json());const r=await fetch('/api/promotion/play',{method:'POST'});const d=await r.json();if(!r.ok)throw new Error(d.error||'تعذر كشف الجائزة');const p=d.play.prize;let sparks='';for(let b=0;b<8;b++){const x=10+Math.random()*80,y=10+Math.random()*65;for(let i=0;i<16;i++){const ang=Math.random()*6.28,dist=50+Math.random()*100;sparks+=`<i class=s style=\"left:${x}%;top:${y}%;color:hsl(${Math.random()*360} 90% 60%);--x:${Math.cos(ang)*dist}px;--y:${Math.sin(ang)*dist}px\"></i>`;}}a.innerHTML='<div class=fire>'+sparks+'</div><div class=gift>🎉</div>'+(pub.winMedia&&pub.winEnabled?'<img class=media src=\"'+pub.winMedia+'\" alt=\"صورة الفوز\">':'')+'<span class=ey>BELMA3QOUL • مبروك</span><h1>'+esc(p.name)+'</h1><p class=value>'+esc(p.value||'')+'</p>'+(p.type==='link'&&p.link?'<a class=btn href=\"'+encodeURI(p.link)+'\" target=\"_blank\" rel=\"noopener noreferrer\">فتح رابط الجائزة ↗</a>':'');}catch(e){a.innerHTML='<div class=gift>🎁</div><span class=ey>BELMA3QOUL</span><h1>تعذر إظهار النتيجة</h1><p>'+esc(e.message)+'</p>';}}run();</script></main></body></html>`;}
+setInterval(()=>{const t=now();for(const[k,v]of sessions)if(v<=t)sessions.delete(k);for(const[k,v]of limits)if(t-v.t>60000)limits.delete(k);},60000).unref();
+const server=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'http://localhost'),p=decodeURIComponent(u.pathname);
+if(req.method==='GET'&&p==='/api/health')return json(res,200,{ok:true,service:'belma3qoul-web',time:new Date().toISOString()});
+if(req.method==='POST'&&p==='/api/auth/login'){if(!ADMIN_PASSWORD)return json(res,503,{ok:false,error:'ADMIN_PASSWORD غير مضبوط على الخادم'});if(!rate(req,'login',8))return json(res,429,{ok:false,error:'محاولات دخول كثيرة'});const b=JSON.parse(await body(req)||'{}');if(b.password!==ADMIN_PASSWORD)return json(res,401,{ok:false,error:'بيانات الدخول غير صحيحة'});const t=crypto.randomBytes(32).toString('hex');sessions.set(t,now()+86400000);setCookie(res,'belma3qoul_session',t);return json(res,200,{ok:true});}
+if(req.method==='POST'&&p==='/api/auth/logout'){const t=cookie(req,'belma3qoul_session');sessions.delete(t);setCookie(res,'belma3qoul_session','',0);return json(res,200,{ok:true});}
+if(req.method==='GET'&&p==='/api/auth/me')return json(res,200,{authenticated:auth(req)});
+if(req.method==='GET'&&p==='/api/settings')return json(res,200,{...site,surpriseTitle:promotion.settings.title,surpriseMessage:promotion.settings.message});
+if(req.method==='POST'&&p==='/api/settings'){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});const b=JSON.parse(await body(req)||'{}');for(const k of ['siteName','news','featured'])if(b[k]!==undefined)site[k]=String(b[k]);save(siteFile,site);return json(res,200,{ok:true,data:site});}
+if(req.method==='GET'&&p==='/api/stats')return json(res,200,{...site.stats,qrScans:promotion.plays.length,winners:promotion.plays.filter(x=>x.prizeType!=='message').length,remainingPrizes:promotion.prizes.reduce((n,x)=>n+Math.max(0,Number(x.remaining)||0),0)});
+if(req.method==='GET'&&p==='/api/promotion/public')return json(res,200,{active:active(),title:promotion.settings.title,message:promotion.settings.message,attemptsPerVisitor:promotion.settings.attemptsPerVisitor,beforeMedia:promotion.beforeMedia,beforeEnabled:promotion.beforeEnabled,winMedia:promotion.winMedia,winEnabled:promotion.winEnabled});
+if(req.method==='POST'&&p==='/api/promotion/play'){if(cookie(req,'belma3qoul_qr_access')!=='1')return json(res,403,{ok:false,error:'يجب مسح رمز QR للدخول إلى المفاجأة'});if(!active())return json(res,409,{ok:false,error:'لا توجد مسابقة نشطة حالياً'});if(!rate(req,'play',20))return json(res,429,{ok:false,error:'طلبات كثيرة، حاول بعد قليل'});const key=visitor(req),plays=promotion.plays.filter(x=>x.visitorKey===key),limit=Math.max(1,Number(promotion.settings.attemptsPerVisitor)||1);if(plays.length>=limit){const old=plays.at(-1);return json(res,429,{ok:false,error:'لقد استنفدت محاولتك',play:{id:old.id,prize:result(old)}});}const prize=pick();if(!prize)return json(res,409,{ok:false,error:'انتهت جميع الجوائز'});prize.remaining=Math.max(0,Number(prize.remaining)-1);const play={id:newId('play'),visitorKey:key,prizeId:prize.id,prizeName:prize.name,prizeType:prize.type,prizeValue:prize.value,prizeLink:prize.link||'',createdAt:new Date().toISOString(),claimed:false};promotion.plays.push(play);save(promotionFile,promotion);setCookie(res,'belma3qoul_visitor',key,31536000);return json(res,200,{ok:true,play:{id:play.id,prize:result(play)}});}
+if(req.method==='GET'&&p==='/api/qr'){const target=`${u.origin}/qr-result?token=${encodeURIComponent(promotion.qrToken)}`;const png=await QRCode.toBuffer(target,{type:'png',width:512,margin:2,errorCorrectionLevel:'H'});return send(res,200,png,'image/png',{'Content-Length':png.length,'Cache-Control':'public,max-age=300'});}
+if(req.method==='GET'&&p==='/qr-result'){if(u.searchParams.get('token')!==promotion.qrToken)return send(res,403,'QR غير صالح','text/plain; charset=utf-8');setCookie(res,'belma3qoul_qr_access','1',600);return send(res,200,qrPage(),'text/html; charset=utf-8');}
+if(req.method==='GET'&&p==='/surprise'&&!u.searchParams.get('token'))return send(res,302,'','text/plain; charset=utf-8',{Location:'/#qr'});
+if(req.method==='GET'&&p==='/surprise'&&u.searchParams.get('token')===promotion.qrToken)setCookie(res,'belma3qoul_qr_access','1',600);
+if(req.method==='GET'&&p==='/api/admin/promotion'){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});return json(res,200,promotion);}
+if(req.method==='PUT'&&p==='/api/admin/promotion/settings'){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});const b=JSON.parse(await body(req)||'{}');for(const k of ['enabled','title','message','attemptsPerVisitor','campaignStart','campaignEnd'])if(b[k]!==undefined)promotion.settings[k]=k==='attemptsPerVisitor'?Math.max(1,Number(b[k])||1):b[k];for(const k of ['beforeEnabled','winEnabled'])if(b[k]!==undefined)promotion[k]=!!b[k];save(promotionFile,promotion);return json(res,200,{ok:true,data:promotion.settings,beforeMedia:promotion.beforeMedia,winMedia:promotion.winMedia,beforeEnabled:promotion.beforeEnabled,winEnabled:promotion.winEnabled});}
+if(req.method==='POST'&&p==='/api/admin/promotion/media'){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});const b=JSON.parse(await body(req)||'{}');if(!['before','win'].includes(b.kind))return json(res,400,{ok:false,error:'نوع الوسائط غير صحيح'});const url=mediaSave(b.data,b.mime);if(b.kind==='before')promotion.beforeMedia=url;else promotion.winMedia=url;save(promotionFile,promotion);return json(res,200,{ok:true,url});}
+if(req.method==='POST'&&p==='/api/admin/prizes'){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});const b=JSON.parse(await body(req)||'{}'),q=Math.max(0,Number(b.quantity)||0),prize={id:newId('prize'),name:String(b.name||'جائزة جديدة'),type:String(b.type||'message'),value:String(b.value||''),quantity:q,remaining:q,enabled:b.enabled!==false,weight:Math.max(0,Number(b.weight)||0),link:String(b.link||'')};promotion.prizes.push(prize);save(promotionFile,promotion);return json(res,201,{ok:true,data:prize});}
+if(req.method==='PUT'&&p.startsWith('/api/admin/prizes/')){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});const prize=promotion.prizes.find(x=>x.id===p.split('/').at(-1));if(!prize)return json(res,404,{ok:false,error:'Prize not found'});const b=JSON.parse(await body(req)||'{}');for(const k of ['name','type','value','link'])if(b[k]!==undefined)prize[k]=String(b[k]);if(b.enabled!==undefined)prize.enabled=!!b.enabled;if(b.weight!==undefined)prize.weight=Math.max(0,Number(b.weight)||0);if(b.quantity!==undefined){const q=Math.max(0,Number(b.quantity)||0),used=Math.max(0,Number(prize.quantity)-Number(prize.remaining));prize.quantity=q;prize.remaining=Math.max(0,q-used);}save(promotionFile,promotion);return json(res,200,{ok:true,data:prize});}
+if(req.method==='DELETE'&&p.startsWith('/api/admin/prizes/')){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});promotion.prizes=promotion.prizes.filter(x=>x.id!==p.split('/').at(-1));save(promotionFile,promotion);return json(res,200,{ok:true});}
+if(req.method==='GET'&&p==='/api/admin/plays'){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});return json(res,200,promotion.plays.slice().reverse());}
+if(req.method==='PUT'&&p.startsWith('/api/admin/plays/')){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});const play=promotion.plays.find(x=>x.id===p.split('/').at(-1));if(!play)return json(res,404,{ok:false,error:'Play not found'});const b=JSON.parse(await body(req)||'{}');if(b.claimed!==undefined)play.claimed=!!b.claimed;save(promotionFile,promotion);return json(res,200,{ok:true,data:play});}
+if(p.startsWith('/media/')){const name=path.basename(p),f=path.join(mediaDir,name);if(file(res,f))return;return send(res,404,'Not found');}
+const safe=path.normalize(p).replace(/^([.][.][\\/])+/,''),f=path.join(dist,safe);if(p!=='/'&&file(res,f))return;if(file(res,path.join(dist,'index.html')))return;return send(res,503,'Production build not found');
+}catch(e){return json(res,500,{ok:false,error:e.message||'Server error'});}});
 const port=Number(process.env.PORT)||3000;server.listen(port,'0.0.0.0',()=>console.log(`belma3qoul-web running on ${port}`));
