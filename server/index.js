@@ -20,7 +20,7 @@ const siteDefaults = {
 };
 const promotionDefaults = {
   settings: { enabled: true, title: 'مفاجأتك بانتظارك 🎁', message: 'امسح QR واكتشف مفاجأتك.', attemptsPerVisitor: 1, campaignStart: null, campaignEnd: null },
-  prizes: [], plays: [], updatedAt: null
+  prizes: [], plays: [], qrToken: '', updatedAt: null
 };
 
 function loadJson(file, fallback) {
@@ -34,6 +34,7 @@ function saveJson(file, value) {
 }
 let site = loadJson(siteFile, siteDefaults);
 let promotion = loadJson(promotionFile, promotionDefaults);
+if (!promotion.qrToken) { promotion.qrToken = crypto.randomBytes(24).toString('hex'); saveJson(promotionFile, promotion); }
 
 const sessions = new Map();
 const rateLimits = new Map();
@@ -43,14 +44,7 @@ const mime = { '.html':'text/html; charset=utf-8','.js':'text/javascript; charse
 const now = () => Date.now();
 const id = (prefix='id') => `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
 function send(res,status,body,type='text/plain; charset=utf-8',extra={}) {
-  res.writeHead(status, {
-    'Content-Type': type,
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'SAMEORIGIN',
-    'Referrer-Policy': 'strict-origin-when-cross-origin',
-    ...extra
-  });
+  res.writeHead(status, {'Content-Type': type,'Cache-Control': 'no-store','X-Content-Type-Options': 'nosniff','X-Frame-Options': 'SAMEORIGIN','Referrer-Policy': 'strict-origin-when-cross-origin',...extra});
   res.end(body);
 }
 function json(res,status,obj) { send(res,status,JSON.stringify(obj),mime['.json']); }
@@ -91,6 +85,7 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==='GET'&&pathname==='/api/stats')return json(res,200,{...site.stats,qrScans:promotion.plays.length,winners:promotion.plays.filter(p=>p.prizeType!=='message').length,remainingPrizes:promotion.prizes.reduce((n,p)=>n+Math.max(0,Number(p.remaining)||0),0)});
     if(req.method==='GET'&&pathname==='/api/promotion/public')return json(res,200,{active:campaignActive(),title:promotion.settings.title,message:promotion.settings.message,attemptsPerVisitor:promotion.settings.attemptsPerVisitor});
     if(req.method==='POST'&&pathname==='/api/promotion/play'){
+      if(cookie(req,'belma3qoul_qr_access')!=='1')return json(res,403,{ok:false,error:'يجب مسح رمز QR للدخول إلى المفاجأة'});
       if(!campaignActive())return json(res,409,{ok:false,error:'لا توجد مسابقة نشطة حالياً'});
       if(!rateLimit(req,'play',20,60_000))return json(res,429,{ok:false,error:'طلبات كثيرة، حاول بعد قليل'});
       const key=visitorKey(req);const attempts=visitorPlays(key);const limit=Math.max(1,Number(promotion.settings.attemptsPerVisitor)||1);
@@ -98,7 +93,13 @@ const server=http.createServer(async(req,res)=>{
       const prize=pickPrize();if(!prize)return json(res,409,{ok:false,error:'انتهت جميع الجوائز'});prize.remaining=Math.max(0,Number(prize.remaining)-1);
       const play={id:id('play'),visitorKey:key,prizeId:prize.id,prizeName:prize.name,prizeType:prize.type,prizeValue:prize.value,prizeLink:prize.link||'',createdAt:new Date().toISOString(),claimed:false};promotion.plays.push(play);saveJson(promotionFile,promotion);setCookie(res,'belma3qoul_visitor',key,31536000);return json(res,200,{ok:true,play:{id:play.id,prize:resultFromPlay(play)}});
     }
-    if(req.method==='GET'&&pathname==='/api/qr'){const base=`${url.origin}/surprise`;const png=await QRCode.toBuffer(base,{type:'png',width:512,margin:2,errorCorrectionLevel:'H'});return send(res,200,png,'image/png',{'Content-Length':png.length,'Cache-Control':'public, max-age=300'});}
+    if(req.method==='GET'&&pathname==='/api/qr'){
+      const target=`${url.origin}/surprise?token=${encodeURIComponent(promotion.qrToken)}`;
+      const png=await QRCode.toBuffer(target,{type:'png',width:512,margin:2,errorCorrectionLevel:'H'});
+      return send(res,200,png,'image/png',{'Content-Length':png.length,'Cache-Control':'public, max-age=300'});
+    }
+    if(req.method==='GET'&&pathname==='/surprise'&&!url.searchParams.get('token')) return send(res,302,'','text/plain; charset=utf-8',{Location:'/#qr'});
+    if(req.method==='GET'&&pathname==='/surprise'&&url.searchParams.get('token')===promotion.qrToken){ setCookie(res,'belma3qoul_qr_access','1',600); }
     if(req.method==='GET'&&pathname==='/api/admin/promotion'){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});return json(res,200,promotion);}
     if(req.method==='PUT'&&pathname==='/api/admin/promotion/settings'){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});const body=JSON.parse(await readBody(req)||'{}');promotion.settings={...promotion.settings,...Object.fromEntries(['enabled','title','message','attemptsPerVisitor','campaignStart','campaignEnd'].filter(k=>body[k]!==undefined).map(k=>[k,k==='attemptsPerVisitor'?Math.max(1,Number(body[k])||1):body[k]]))};saveJson(promotionFile,promotion);return json(res,200,{ok:true,data:promotion.settings});}
     if(req.method==='POST'&&pathname==='/api/admin/prizes'){if(!auth(req))return json(res,401,{ok:false,error:'Unauthorized'});const b=JSON.parse(await readBody(req)||'{}');const q=Math.max(0,Number(b.quantity)||0);const prize={id:id('prize'),name:String(b.name||'جائزة جديدة'),type:String(b.type||'message'),value:String(b.value||''),quantity:q,remaining:q,enabled:b.enabled!==false,weight:Math.max(0,Number(b.weight)||0),link:String(b.link||'')};promotion.prizes.push(prize);saveJson(promotionFile,promotion);return json(res,201,{ok:true,data:prize});}
