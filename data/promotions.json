@@ -1,0 +1,47 @@
+{
+  "settings": {
+    "enabled": true,
+    "title": "مفاجأتك بانتظارك 🎁",
+    "message": "امسح QR واكتشف مفاجأتك.",
+    "attemptsPerVisitor": 1,
+    "campaignStart": null,
+    "campaignEnd": null
+  },
+  "prizes": [
+    {
+      "id": "p1",
+      "name": "حظ أوفر",
+      "type": "message",
+      "value": "حظ أوفر في المرة القادمة 😊",
+      "quantity": 1000,
+      "remaining": 1000,
+      "enabled": true,
+      "weight": 80,
+      "link": ""
+    },
+    {
+      "id": "p2",
+      "name": "قسيمة شراء 500 دج",
+      "type": "voucher",
+      "value": "500 دج",
+      "quantity": 5,
+      "remaining": 5,
+      "enabled": true,
+      "weight": 15,
+      "link": ""
+    },
+    {
+      "id": "p3",
+      "name": "رابط مسابقة Facebook",
+      "type": "link",
+      "value": "شارك في المسابقة",
+      "quantity": 2,
+      "remaining": 2,
+      "enabled": true,
+      "weight": 5,
+      "link": "https://www.facebook.com/ma3qoulshop"
+    }
+  ],
+  "plays": [],
+  "updatedAt": null
+}
