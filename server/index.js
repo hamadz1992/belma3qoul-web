@@ -67,6 +67,10 @@ function rateLimit(req,key,limit=8,windowMs=60_000) {
 function cleanup() { const t=now(); for(const [k,v] of sessions) if(v<=t) sessions.delete(k); for(const [k,v] of rateLimits) if(t-v.started>60_000) rateLimits.delete(k); }
 setInterval(cleanup,60_000).unref();
 
+function qrResultPage() {
+  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#064b32"><title>مفاجأتك - بزار كل شيء بالمعقول"><style>*{box-sizing:border-box}body{margin:0;min-height:100svh;font-family:Tahoma,Arial,sans-serif;background:radial-gradient(circle at top,#0b704b,#064b32 55%,#043d29);display:grid;place-items:center;padding:20px;color:#15201b}.card{width:min(460px,100%);background:#fff;border:1px solid #c79a32;border-radius:24px;padding:32px 24px;text-align:center;box-shadow:0 20px 60px #0004}.gift{font-size:76px;line-height:1}.eyebrow{display:inline-block;color:#c79a32;font-weight:900;font-size:11px;letter-spacing:1px;margin:10px 0}.card h1{margin:5px 0;color:#064b32;font-size:28px}.value{font-size:20px;font-weight:900;color:#c79a32;margin:10px 0}.desc{color:#606a64;line-height:1.7;font-size:13px}.btn{display:inline-flex;align-items:center;justify-content:center;background:#064b32;color:#fff;text-decoration:none;border-radius:12px;padding:13px 20px;font-weight:900;margin-top:8px}.muted{color:#606a64;font-size:11px;margin-top:15px}.error{color:#b42318;background:#fff0f0;border-radius:10px;padding:10px}.loading{color:#064b32;font-weight:900}</style></head><body><main class="card" id="app"><div class="gift">🎁</div><span class="eyebrow">BELMA3QOUL • مفاجأة</span><h1>جاري كشف جائزتك…</h1><p class="loading">لحظة واحدة</p></main><script>async function run(){const app=document.getElementById('app');try{const r=await fetch('/api/promotion/play',{method:'POST'});const d=await r.json();if(!r.ok)throw new Error(d.error||'تعذر كشف الجائزة');const p=d.play?.prize;if(!p)throw new Error('تعذر قراءة الجائزة');app.innerHTML='<div class="gift">🎉</div><span class="eyebrow">BELMA3QOUL • مبروك</span><h1>'+escapeHtml(p.name)+'</h1><p class="value">'+escapeHtml(p.value||'')+'</p>'+(p.type==='link'&&p.link?'<a class="btn" href="'+encodeURI(p.link)+'" target="_blank" rel="noopener noreferrer">فتح رابط الجائزة ↗</a>':'')+'<p class="muted">احتفظ بهذه النتيجة عند الحاجة.</p>';}catch(e){app.innerHTML='<div class="gift">🎁</div><span class="eyebrow">BELMA3QOUL</span><h1>تعذر إظهار النتيجة</h1><p class="desc error">'+escapeHtml(e.message)+'</p><a class="btn" href="/">العودة إلى الموقع</a>';}}function escapeHtml(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c]));}run();</script></body></html>`;
+}
+
 const server=http.createServer(async(req,res)=>{
   try {
     const url=new URL(req.url,'http://localhost'); const pathname=decodeURIComponent(url.pathname);
@@ -94,9 +98,14 @@ const server=http.createServer(async(req,res)=>{
       const play={id:id('play'),visitorKey:key,prizeId:prize.id,prizeName:prize.name,prizeType:prize.type,prizeValue:prize.value,prizeLink:prize.link||'',createdAt:new Date().toISOString(),claimed:false};promotion.plays.push(play);saveJson(promotionFile,promotion);setCookie(res,'belma3qoul_visitor',key,31536000);return json(res,200,{ok:true,play:{id:play.id,prize:resultFromPlay(play)}});
     }
     if(req.method==='GET'&&pathname==='/api/qr'){
-      const target=`${url.origin}/surprise?token=${encodeURIComponent(promotion.qrToken)}`;
+      const target=`${url.origin}/qr-result?token=${encodeURIComponent(promotion.qrToken)}`;
       const png=await QRCode.toBuffer(target,{type:'png',width:512,margin:2,errorCorrectionLevel:'H'});
       return send(res,200,png,'image/png',{'Content-Length':png.length,'Cache-Control':'public, max-age=300'});
+    }
+    if(req.method==='GET'&&pathname==='/qr-result'){
+      if(url.searchParams.get('token')!==promotion.qrToken)return send(res,403,'QR غير صالح أو منتهي','text/plain; charset=utf-8');
+      setCookie(res,'belma3qoul_qr_access','1',600);
+      return send(res,200,qrResultPage(),'text/html; charset=utf-8');
     }
     if(req.method==='GET'&&pathname==='/surprise'&&!url.searchParams.get('token')) return send(res,302,'','text/plain; charset=utf-8',{Location:'/#qr'});
     if(req.method==='GET'&&pathname==='/surprise'&&url.searchParams.get('token')===promotion.qrToken){ setCookie(res,'belma3qoul_qr_access','1',600); }
