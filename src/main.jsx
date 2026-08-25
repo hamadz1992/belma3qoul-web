@@ -1,93 +1,55 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 
-const NAV = [
-  ['dashboard', 'نظرة عامة', '📊'], ['sales', 'المبيعات', '🛒'], ['products', 'السلع', '📦'],
-  ['inventory', 'المخزون', '🏬'], ['customers', 'العملاء', '👤'], ['cash', 'الصندوق', '💼'],
-  ['expenses', 'المصاريف', '🧾'], ['reports', 'التقارير', '📈'], ['ads', 'الإعلانات', '📣'],
-  ['facebook', 'Facebook', 'ⓕ'], ['links', 'روابط التواصل', '🔗'], ['analytics', 'الإحصائيات', '📉'],
-  ['settings', 'الإعدادات', '⚙️']
+const SOCIALS = [
+  ['واتساب','تواصل معنا مباشرة','https://wa.me/213779156397','wa','☘'],
+  ['رسائل فيسبوك','تواصل عبر ماسنجر','https://m.me/ma3qoulshop','msg','✉'],
+  ['إنستغرام','تابعنا على إنستغرام','https://www.instagram.com/belma3qoul','ig','◎'],
+  ['فيسبوك','تابعنا على فيسبوك','https://www.facebook.com/ma3qoulshop','fb','f'],
+  ['تيك توك','شاهد أحدث العروض والمنتجات','https://www.tiktok.com/@belma3qoul','tt','♪'],
+  ['الموقع','اعرف موقعنا على الخريطة','https://maps.app.goo.gl/2mNGwYgXfj8bSGm9A','map','⌖']
 ];
+const TYPES={voucher:'قسيمة شراء',link:'رابط',message:'رسالة',product:'جائزة عينية'};
 
-const MODULES = [
-  ['sales', 'المبيعات', 'إدارة الفواتير والعمليات', '🛒'], ['products', 'السلع', 'إضافة المنتجات والأسعار والتصنيفات', '📦'],
-  ['inventory', 'المخزون', 'متابعة الكميات وحركات المخزون', '🏬'], ['customers', 'العملاء', 'العملاء والديون والمتابعة', '👤'],
-  ['cash', 'الصندوق', 'الجلسات والحركات النقدية', '💼'], ['expenses', 'المصاريف', 'تسجيل ومراجعة المصاريف', '🧾'],
-  ['reports', 'التقارير', 'تقارير المبيعات والأرباح', '📈'], ['analytics', 'الإحصائيات', 'مؤشرات أداء الموقع', '📊']
-];
+async function api(path,options={}){const r=await fetch(path,options);const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);return data;}
+function Logo(){return <div className="brand"><strong>بزار</strong><span>كل شيء بالمعقول</span></div>}
+function Layout({children}){return <div className="site"><header><a href="/" className="logoLink"><Logo/></a><nav><a href="/">الرئيسية</a><a href="/surprise">🎁 المفاجأة</a><a href="/admin">🔐 الإدارة</a></nav></header>{children}</div>}
 
-async function api(path, options) {
-  const response = await fetch(path, options);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
+function Home(){return <Layout><main className="home">
+  <section className="hero"><div className="cartLogo">🛒</div><h1>بزار <b>كل شيء بالمعقول</b></h1><div className="ornament">ـــــ ◆ ـــــ</div><p className="tagline">كل شيء بالمعقول… جودة تستحقها وسعر يناسبك</p></section>
+  <section className="about"><h2>بزار كل شيء بالمعقول</h2><p>وجهتكم لتشكيلة متنوعة تلبي احتياجات العائلة، من ملابس الرضع والرجالية والنسائية والأطفال، إلى الكوسميتيك والعطور الأصلية والمستلزمات المنزلية المختارة، مع أسعار مناسبة وخدمة توصيل متوفرة داخل الولاية وخارجها.</p></section>
+  <nav className="socialGrid">{SOCIALS.map(([n,s,u,k,i])=><a key={k} className={`social ${k}`} href={u} target="_blank" rel="noreferrer"><span>{i}</span><div><b>{n}</b><small>{s}</small></div><i>›</i></a>)}</nav>
+  <section className="infoGrid"><a className="infoCard" href="https://maps.app.goo.gl/2mNGwYgXfj8bSGm9A" target="_blank" rel="noreferrer"><b>📍 عنوان المحل</b><span>طريق التكوين المهني بالزقم، حساني عبد الكريم، الوادي</span></a><div className="infoCard"><b>🕐 ساعات العمل</b><span>السبت إلى الخميس: 08:30–12:00 و17:00–20:00<br/>الجمعة: مساءً فقط</span></div></section>
+  <a className="qrPromo" href="/surprise"><img src="/api/qr" alt="QR للمفاجأة"/><div><strong>✨ امسح وقد تكون من الفائزين</strong><p>امسح الكود واكتشف مفاجأتك 🎁</p></div></a>
+</main><footer>جودة تستحقها .. وسعر يناسبك<br/><small>بزار — كل شيء بالمعقول</small></footer></Layout>}
+
+function Surprise(){
+ const [state,setState]=useState('ready'); const [result,setResult]=useState(null); const [error,setError]=useState('');
+ useEffect(()=>{api('/api/promotion/public').catch(()=>{});},[]);
+ const play=async()=>{setState('loading');setError('');try{const r=await api('/api/promotion/play',{method:'POST'});setResult(r.play);setState('done');}catch(e){setError(e.message);setState('error');}};
+ const prize=result?.prize;
+ return <div className="surprisePage"><a href="/" className="back">← العودة للرئيسية</a><div className="surpriseCard"><div className={`gift ${state==='done'?'opened':''}`}>{state==='done'?'🎉':'🎁'}</div><span className="eyebrow">BELMA3QOUL • مفاجأة</span>{state==='done'?<><h1>{prize?.name}</h1><p className="resultValue">{prize?.value}</p>{prize?.type==='link'&&prize.link&&<a className="primary" href={prize.link} target="_blank" rel="noreferrer">فتح الرابط ↗</a>}<small className="hint">احتفظ بهذه النتيجة عند الحاجة.</small></>:<><h1>مفاجأتك بانتظارك</h1><p>اضغط الزر واكتشف جائزتك. لكل زائر محاولة واحدة حسب إعدادات الحملة.</p><button className="primary" disabled={state==='loading'} onClick={play}>{state==='loading'?'جارٍ السحب…':'اكتشف جائزتي 🎁'}</button>{error&&<div className="error">{error}</div>}</>}</div></div>
 }
 
-function Logo({ compact = false }) {
-  return <div className={compact ? 'brand compact' : 'brand'}><span>بزار</span><b>كل شيء بالمعقول</b></div>;
-}
+function Login({onLogin}){const [pass,setPass]=useState('');const [error,setError]=useState('');const submit=async()=>{try{await api('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pass})});onLogin();}catch(e){setError(e.message||'كلمة المرور غير صحيحة');}};return <div className="login"><div className="loginCard"><Logo/><span className="eyebrow">ADMIN PANEL</span><h1>لوحة التحكم</h1><p>إدارة المسابقة والجوائز والفائزين.</p><input type="password" autoFocus placeholder="كلمة المرور" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()}/>{error&&<div className="error">{error}</div>}<button className="primary full" onClick={submit}>دخول</button><a href="/">العودة للموقع</a></div></div>}
 
-function Layout({ children }) {
-  return <div className="app-shell"><header className="public-nav"><a href="/"><Logo /></a><nav><a href="/">الرئيسية</a><a href="/surprise">🎁 المفاجأة</a><a className="nav-admin" href="/admin">🔐 لوحة التحكم</a></nav></header>{children}</div>;
-}
+function Admin(){const [logged,setLogged]=useState(false);const [tab,setTab]=useState('overview');const [data,setData]=useState(null);const [plays,setPlays]=useState([]);const [stats,setStats]=useState({});const [form,setForm]=useState({name:'',type:'voucher',value:'',quantity:1,weight:10,link:'',enabled:true});
+ const load=async()=>{const [d,s,p]=await Promise.all([api('/api/admin/promotion'),api('/api/stats'),api('/api/admin/plays')]);setData(d);setStats(s);setPlays(p);};
+ useEffect(()=>{api('/api/auth/me').then(r=>{setLogged(r.authenticated);if(r.authenticated)load();});},[]);
+ if(!logged)return <Login onLogin={()=>{setLogged(true);load();}}/>; if(!data)return <div className="loading">جارٍ تحميل لوحة التحكم…</div>;
+ const updateSettings=async(patch)=>{const r=await api('/api/admin/promotion/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});setData({...data,settings:r.data});};
+ const addPrize=async e=>{e.preventDefault();await api('/api/admin/prizes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...form,quantity:Number(form.quantity),weight:Number(form.weight)})});setForm({name:'',type:'voucher',value:'',quantity:1,weight:10,link:'',enabled:true});load();};
+ const editPrize=async p=>{const quantity=prompt('العدد الإجمالي',p.quantity);if(quantity===null)return;await api(`/api/admin/prizes/${p.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({quantity:Number(quantity)})});load();};
+ const deletePrize=async p=>{if(confirm(`حذف ${p.name}؟`)){await api(`/api/admin/prizes/${p.id}`,{method:'DELETE'});load();}};
+ const claim=async p=>{await api(`/api/admin/plays/${p.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({claimed:!p.claimed})});load();};
+ const logout=async()=>{await api('/api/auth/logout',{method:'POST'});setLogged(false);};
+ return <div className="admin"><aside><a href="/admin" className="sideLogo"><Logo/></a><button className={tab==='overview'?'active':''} onClick={()=>setTab('overview')}>📊 نظرة عامة</button><button className={tab==='campaign'?'active':''} onClick={()=>setTab('campaign')}>🎯 الحملة</button><button className={tab==='prizes'?'active':''} onClick={()=>setTab('prizes')}>🎁 الجوائز</button><button className={tab==='plays'?'active':''} onClick={()=>setTab('plays')}>🏆 الفائزون والمشاركات</button><a href="/">🌐 عرض الموقع</a><button className="logout" onClick={logout}>↪ تسجيل الخروج</button></aside><main className="adminMain"><header className="adminHeader"><div><span className="eyebrow">BELMA3QOUL ADMIN</span><h1>{tab==='overview'?'نظرة عامة':tab==='campaign'?'إعدادات الحملة':tab==='prizes'?'الجوائز':'المشاركات والفائزون'}</h1></div><span className="online">● النظام متصل</span></header>
+ {tab==='overview'&&<><div className="stats">{[['مسح/مشاركة QR',stats.qrScans||0,'📱'],['الفائزون',stats.winners||0,'🏆'],['الجوائز المتبقية',stats.remainingPrizes||0,'🎁'],['حالة الحملة',data.settings.enabled?'مفعلة':'متوقفة','🎯']].map(x=><div className="stat" key={x[0]}><span>{x[2]}</span><small>{x[0]}</small><strong>{x[1]}</strong></div>)}</div><div className="adminCard"><h2>رابط المفاجأة</h2><p>هذا هو الرابط الذي يجب أن يشير إليه QR المطبوع في المحل.</p><code>/surprise</code><img className="adminQr" src="/api/qr" alt="QR"/><a className="primary smallBtn" href="/api/qr" target="_blank">فتح QR للطباعة</a></div></>}
+ {tab==='campaign'&&<div className="adminCard formCard"><label><input type="checkbox" checked={data.settings.enabled} onChange={e=>updateSettings({enabled:e.target.checked})}/> الحملة مفعلة</label><label>عنوان المفاجأة<input value={data.settings.title} onChange={e=>setData({...data,settings:{...data.settings,title:e.target.value}})}/></label><label>الرسالة<input value={data.settings.message} onChange={e=>setData({...data,settings:{...data.settings,message:e.target.value}})}/></label><label>عدد المحاولات لكل زائر<input type="number" min="1" value={data.settings.attemptsPerVisitor} onChange={e=>setData({...data,settings:{...data.settings,attemptsPerVisitor:e.target.value}})}/></label><div className="two"><label>بداية الحملة<input type="datetime-local" value={data.settings.campaignStart||''} onChange={e=>setData({...data,settings:{...data.settings,campaignStart:e.target.value||null}})}/></label><label>نهاية الحملة<input type="datetime-local" value={data.settings.campaignEnd||''} onChange={e=>setData({...data,settings:{...data.settings,campaignEnd:e.target.value||null}})}/></label></div><button className="primary" onClick={()=>updateSettings(data.settings)}>حفظ إعدادات الحملة</button></div>}
+ {tab==='prizes'&&<><form className="adminCard formCard" onSubmit={addPrize}><h2>إضافة جائزة</h2><div className="two"><label>اسم الجائزة<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label><label>النوع<select value={form.type} onChange={e=>setForm({...form,type:e.target.value})}><option value="voucher">قسيمة شراء</option><option value="link">رابط</option><option value="product">جائزة عينية</option><option value="message">رسالة</option></select></label></div><div className="two"><label>القيمة/الوصف<input value={form.value} onChange={e=>setForm({...form,value:e.target.value})}/></label><label>العدد<input type="number" min="0" required value={form.quantity} onChange={e=>setForm({...form,quantity:e.target.value})}/></label></div><div className="two"><label>الوزن في السحب<input type="number" min="0" value={form.weight} onChange={e=>setForm({...form,weight:e.target.value})}/></label><label>الرابط (اختياري)<input value={form.link} onChange={e=>setForm({...form,link:e.target.value})}/></label></div><button className="primary" type="submit">+ إضافة الجائزة</button></form><div className="prizeList">{data.prizes.map(p=><div className="prizeRow" key={p.id}><span className="prizeIcon">🎁</span><div><b>{p.name}</b><small>{TYPES[p.type]||p.type} • الوزن {p.weight}</small></div><strong>{p.remaining}/{p.quantity}</strong><button onClick={()=>editPrize(p)}>تعديل</button><button onClick={()=>deletePrize(p)}>حذف</button></div>)}</div></>}
+ {tab==='plays'&&<div className="adminCard"><div className="tableWrap"><table><thead><tr><th>الوقت</th><th>الجائزة</th><th>النوع</th><th>الحالة</th><th></th></tr></thead><tbody>{plays.map(p=><tr key={p.id}><td>{new Date(p.createdAt).toLocaleString('ar-DZ')}</td><td>{p.prizeName}</td><td>{TYPES[p.prizeType]||p.prizeType}</td><td>{p.claimed?'تم الاستلام':'غير مستلمة'}</td><td><button onClick={()=>claim(p)}>{p.claimed?'إلغاء الاستلام':'تأكيد الاستلام'}</button></td></tr>)}</tbody></table>{!plays.length&&<div className="empty">لا توجد مشاركات بعد.</div>}</div></div>}
+ </main></div>}
 
-function Home() {
-  return <Layout><main className="home-page">
-    <section className="hero-section">
-      <div className="hero-copy"><span className="eyebrow">كل شيء بالمعقول</span><h1>كل ما تحتاجه<br /><em>في مكان واحد</em></h1><p>واجهة حديثة لمتجرنا تجمع التعريف بالمحل، الروابط، العروض، والمحتوى في تجربة واحدة سريعة على الهاتف والكمبيوتر.</p><div className="actions"><a className="primaryBtn" href="/surprise">اكتشف المفاجأة 🎁</a><a className="outlineBtn" href="/admin">إدارة الموقع</a></div></div>
-      <div className="hero-card"><div className="hero-logo">🛍️</div><strong>بزار كل شيء بالمعقول</strong><span>محل متنوع • عروض • تواصل سريع</span></div>
-    </section>
-    <section className="feature-strip">{[['🛍️','منتجات وعروض جديدة','أبرز المنتجات والتحديثات في مكان واضح.'],['✨','آخر منشورات المحل','محتوى المحل وأحدث الأخبار بسهولة.'],['💬','تواصل معنا بسهولة','الوصول إلى الشبكات الاجتماعية والموقع بسرعة.']].map(([i,t,d])=><article key={t}><span className="featureIcon">{i}</span><h3>{t}</h3><p>{d}</p></article>)}</section>
-    <section className="public-links"><div><span className="eyebrow">التواصل</span><h2>كل روابطك المهمة</h2></div><div className="link-grid">{[['WhatsApp','التواصل المباشر','wa'],['Instagram','تابع الجديد','ig'],['Facebook','صفحتنا على Facebook','fb'],['TikTok','الفيديوهات والمنشورات','tt'],['الموقع','الوصول إلى المحل','map'],['Messenger','راسلنا','msg']].map(([name,sub,key])=><a key={key} href="#" className={`social-link ${key}`}><span>{key==='wa'?'☘':key==='ig'?'◎':key==='fb'?'f':key==='tt'?'♪':key==='map'?'⌖':'✉'}</span><div><b>{name}</b><small>{sub}</small></div><i>←</i></a>)}</div></section>
-  </main><footer className="public-footer">كل شيء بالمعقول — تجربة رقمية بسيطة وسريعة</footer></Layout>;
-}
-
-function Surprise() {
-  const [opened, setOpened] = useState(false);
-  return <div className="surprise-page"><a className="backLink" href="/">← العودة للرئيسية</a><div className="surprise-card"><div className={`gift-art ${opened ? 'opened' : ''}`}>{opened ? '🎉' : '🎁'}</div><span className="eyebrow">BELMA3QOUL</span><h1>{opened ? 'المفاجأة وصلت!' : 'مفاجأة بانتظارك'}</h1><p>{opened ? 'هذه الصفحة أصبحت جاهزة لتحتوي على العرض أو الرسالة التي تختارها من لوحة التحكم.' : 'اضغط على الزر لفتح المفاجأة.'}</p><button className="primaryBtn" onClick={() => setOpened(true)}>{opened ? 'تم الفتح ✓' : 'افتح المفاجأة'}</button><a className="textLink" href="/admin">تخصيص المفاجأة من لوحة التحكم</a></div></div>;
-}
-
-function Login({ onLogin }) {
-  const [pass, setPass] = useState('');
-  const [error, setError] = useState('');
-  const submit = async () => {
-    try { await api('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pass }) }); onLogin(); }
-    catch { setError('كلمة المرور غير صحيحة'); }
-  };
-  return <div className="login-page"><div className="login-card"><Logo /><span className="eyebrow">ADMIN PANEL</span><h1>لوحة التحكم</h1><p>سجّل الدخول لإدارة صفحات الموقع ومحتواه وإعداداته.</p><input type="password" autoFocus value={pass} placeholder="كلمة المرور" onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()} />{error&&<div className="error">{error}</div>}<button className="primaryBtn full" onClick={submit}>دخول إلى اللوحة</button><a href="/">العودة للموقع</a></div></div>;
-}
-
-function Dashboard({ stats }) {
-  return <><section className="welcome-banner"><div><span className="eyebrow">اليوم</span><h2>مرحبًا بك 👋</h2><p>كل أدوات موقعك وإدارته في مكان واحد.</p></div><a className="outlineBtn" href="/">عرض الموقع ↗</a></section><section className="stat-grid">{[['المبيعات',stats.sales,'🛒'],['السلع',stats.products,'📦'],['العملاء',stats.customers,'👤'],['المخزون',stats.stock,'🏬']].map(([label,value,icon])=><div key={label} className="stat-card"><span>{icon}</span><div><small>{label}</small><strong>{value}</strong></div></div>)}</section><section className="dashboard-section"><div className="section-title"><span className="eyebrow">الوصول السريع</span><h2>أقسام الإدارة</h2></div><div className="module-grid">{MODULES.map(([k,v,d,i])=><a className="module-card" href={`/admin/${k}`} key={k}><span className="module-icon">{i}</span><div><h3>{v}</h3><p>{d}</p></div><b>←</b></a>)}</div></section></>;
-}
-
-function Settings({ initial }) {
-  const [data, setData] = useState(initial);
-  const save = async () => { await api('/api/settings', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) }); alert('تم حفظ الإعدادات'); };
-  return <section className="admin-panel"><span className="eyebrow">SETTINGS</span><h2>إعدادات الموقع</h2><p>غيّر المحتوى العام المستخدم في الموقع وصفحة المفاجأة.</p>{[['siteName','اسم الموقع'],['news','شريط الأخبار'],['featured','عنوان المنشورات المميزة'],['surpriseTitle','عنوان المفاجأة'],['surpriseMessage','رسالة المفاجأة']].map(([key,label])=><label key={key}>{label}<input value={data[key]||''} onChange={e=>setData({...data,[key]:e.target.value})}/></label>)}<button className="primaryBtn" onClick={save}>حفظ الإعدادات</button></section>;
-}
-
-function Module({ name, stats }) {
-  const meta = MODULES.find(m=>m[0]===name) || [name, name, '', '⚙️'];
-  return <section className="admin-panel module-view"><span className="eyebrow">MODULE</span><div className="module-heading"><span className="big-icon">{meta[3]}</span><div><h2>{meta[1]}</h2><p>{meta[2]}</p></div></div><div className="module-metrics"><div><small>الحالة</small><b>متصل</b></div><div><small>الخدمة</small><b>API</b></div><div><small>السجلات</small><b>{stats[metricFor(name)] ?? 0}</b></div></div><div className="empty-state"><span>🧩</span><h3>هذه الوحدة جاهزة للتوسعة</h3><p>البنية الآن موحدة، ويمكن ربط CRUD وقواعد البيانات والخدمات الخارجية داخل هذا القسم بدون تغيير التنقل العام.</p></div></section>;
-}
-function metricFor(name){ return name==='sales'?'sales':name==='products'?'products':name==='customers'?'customers':name==='inventory'?'stock':'sales'; }
-
-function Admin() {
-  const [logged, setLogged] = useState(sessionStorage.getItem('belma3qoul_admin') === '1');
-  const [section, setSection] = useState(location.pathname.split('/')[2] || 'dashboard');
-  const [stats, setStats] = useState({sales:0,products:0,customers:0,stock:0});
-  const [settings, setSettings] = useState({siteName:'كل شيء بالمعقول',news:'تابعوا أحدث منشورات المحل',featured:'آخر المنشورات',surpriseTitle:'مفاجأة بانتظارك',surpriseMessage:'هناك شيء جميل بانتظارك.'});
-
-  useEffect(()=>{ if(!logged)return; api('/api/stats').then(setStats).catch(()=>{}); api('/api/settings').then(setSettings).catch(()=>{}); },[logged]);
-  useEffect(()=>{ const fn=()=>setSection(location.pathname.split('/')[2]||'dashboard'); addEventListener('popstate',fn); return()=>removeEventListener('popstate',fn); },[]);
-  const go = key => { const target=key==='dashboard'?'/admin':`/admin/${key}`; history.pushState({},'',target); setSection(key); };
-  const logout=async()=>{await api('/api/auth/logout',{method:'POST'}).catch(()=>{});sessionStorage.removeItem('belma3qoul_admin');setLogged(false);};
-  if(!logged) return <Login onLogin={()=>{sessionStorage.setItem('belma3qoul_admin','1');setLogged(true)}}/>;
-  const title=section==='dashboard'?'نظرة عامة':section==='settings'?'الإعدادات':(NAV.find(n=>n[0]===section)?.[1]||'الإدارة');
-  return <div className="admin-layout"><aside className="sidebar"><a href="/admin" onClick={e=>{e.preventDefault();go('dashboard')}}><Logo compact/></a><div className="side-menu">{NAV.map(([k,label,icon])=><button key={k} className={section===k?'active':''} onClick={()=>go(k)}><span>{icon}</span><b>{label}</b></button>)}</div><button className="logout" onClick={logout}>↪ تسجيل الخروج</button></aside><main className="admin-main"><header className="admin-top"><div><span className="eyebrow">لوحة التحكم</span><h1>{title}</h1></div><div className="top-actions"><span className="status-dot">● النظام متصل</span><a href="/">عرض الموقع</a></div></header>{section==='dashboard'?<Dashboard stats={stats}/>:section==='settings'?<Settings initial={settings}/>:<Module name={section} stats={stats}/>}</main></div>;
-}
-
-function App(){ const p=location.pathname; if(p==='/surprise'||p.startsWith('/surprise/')) return <Surprise/>; if(p==='/admin'||p.startsWith('/admin/')) return <Admin/>; return <Home/>; }
-
+function App(){const p=location.pathname;if(p==='/surprise'||p.startsWith('/surprise/'))return <Surprise/>;if(p==='/admin'||p.startsWith('/admin/'))return <Admin/>;return <Home/>}
 createRoot(document.getElementById('root')).render(<App/>);
