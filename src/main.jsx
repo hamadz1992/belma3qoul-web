@@ -58,46 +58,27 @@ function Admin(){
  const [logged,setLogged]=useState(false);const [tab,setTab]=useState('overview');const [data,setData]=useState(null);const [plays,setPlays]=useState([]);const [stats,setStats]=useState({});
  const [mediaBusy,setMediaBusy]=useState(''); const [saveState,setSaveState]=useState('');
  const [prizeBusy,setPrizeBusy]=useState('');
- const [prizeDraft,setPrizeDraft]=useState({name:'',type:'voucher',value:'',quantity:5,weight:20,link:''});
  const load=async()=>{const [d,s,p]=await Promise.all([api('/api/admin/promotion'),api('/api/stats'),api('/api/admin/plays')]);setData(d);setStats(s);setPlays(p);};
  useEffect(()=>{api('/api/auth/me').then(r=>{setLogged(r.authenticated);if(r.authenticated)load();});},[]);
  if(!logged)return <Login onLogin={()=>{setLogged(true);load();}}/>; if(!data)return <div className="loading">جارٍ تحميل لوحة التحكم…</div>;
  const updateSettings=async(patch)=>{const r=await api('/api/admin/promotion/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});setData({...data,settings:{...data.settings,...r.data},beforeMedia:r.beforeMedia||data.beforeMedia,winMedia:r.winMedia||data.winMedia,beforeEnabled:r.beforeEnabled??data.beforeEnabled,winEnabled:r.winEnabled??data.winEnabled});};
  const saveAll=async()=>{setSaveState('saving');try{await updateSettings({...data.settings,beforeEnabled:data.beforeEnabled!==false,winEnabled:data.winEnabled!==false});setSaveState('saved');setTimeout(()=>setSaveState(''),2200);}catch(e){setSaveState('error');alert(e.message);}};
  const claim=async p=>{await api(`/api/admin/plays/${p.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({claimed:!p.claimed})});const r=await api('/api/admin/plays');setPlays(r);};
- const addPrize=async()=>{if(!prizeDraft.name.trim()||!prizeDraft.value.trim()){alert('أدخل اسم الجائزة وتفاصيلها أولاً.');return;}setPrizeBusy('new');try{await api('/api/admin/prizes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...prizeDraft,name:prizeDraft.name.trim(),quantity:Math.max(0,Number(prizeDraft.quantity)||0),weight:Math.max(0,Number(prizeDraft.weight)||0),enabled:true})});setPrizeDraft({name:'',type:'voucher',value:'',quantity:5,weight:20,link:''});await load();}catch(e){alert(e.message);}finally{setPrizeBusy('');}};
- const savePrize=async prize=>{setPrizeBusy(prize.id);try{await api(`/api/admin/prizes/${prize.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({quantity:Math.max(0,Number(prize.quantity)||0),weight:Math.max(0,Number(prize.weight)||0),enabled:prize.enabled!==false})});await load();}catch(e){alert(e.message);}finally{setPrizeBusy('');}};
+ const savePrize=async prize=>{const quantity=Math.max(0,Math.floor(Number(prize.quantity)||0));setPrizeBusy(prize.id);try{await api(`/api/admin/prizes/${prize.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({quantity})});await load();}catch(e){alert(e.message);}finally{setPrizeBusy('');}};
  const uploadMedia=async(kind,file)=>{if(!file)return;setMediaBusy(kind);try{const dataUrl=await new Promise((resolve,reject)=>{const fr=new FileReader();fr.onload=()=>resolve(fr.result);fr.onerror=reject;fr.readAsDataURL(file);});const r=await api('/api/admin/promotion/media',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,data:dataUrl,mime:file.type})});setData({...data,[kind==='before'?'beforeMedia':'winMedia']:r.url});}catch(e){alert(e.message);}finally{setMediaBusy('');}};
  const logout=async()=>{await api('/api/auth/logout',{method:'POST'});setLogged(false);};
  const previewUrl=`/surprise?token=${encodeURIComponent(data.qrToken||'')}`;
  const campaignForm=<>
    <div className="adminCard formCard"><h2>⚙️ إعدادات المفاجأة</h2><label><input type="checkbox" checked={data.settings.enabled} onChange={e=>setData({...data,settings:{...data.settings,enabled:e.target.checked}})}/> المفاجأة مفعلة</label><label>عنوان شاشة المفاجأة<input value={data.settings.title} onChange={e=>setData({...data,settings:{...data.settings,title:e.target.value}})}/></label><label>الرسالة<input value={data.settings.message} onChange={e=>setData({...data,settings:{...data.settings,message:e.target.value}})}/></label><label>نص زر المفاجأة<input value={data.settings.buttonText||'اكتشف جائزتي 🎁'} onChange={e=>setData({...data,settings:{...data.settings,buttonText:e.target.value}})}/></label><label>عدد المحاولات لكل زائر<input type="number" min="1" value={data.settings.attemptsPerVisitor} onChange={e=>setData({...data,settings:{...data.settings,attemptsPerVisitor:e.target.value}})}/></label><div className="two"><label>بداية الحملة<input type="datetime-local" value={data.settings.campaignStart||''} onChange={e=>setData({...data,settings:{...data.settings,campaignStart:e.target.value||null}})}/></label><label>نهاية الحملة<input type="datetime-local" value={data.settings.campaignEnd||''} onChange={e=>setData({...data,settings:{...data.settings,campaignEnd:e.target.value||null}})}/></label></div></div>
    <div className="adminCard formCard prizeManager">
-    <h2>🎁 إدارة الجوائز وعدد الفائزين</h2>
-    <p>حدد الكمية الإجمالية لكل جائزة. ينقص المتبقي تلقائيًا بمقدار واحد بعد كل فوز، وتتوقف الجائزة عن الظهور عند وصول المتبقي إلى صفر.</p>
+    <h2>🎁 التحكم في عدد الجوائز</h2>
+    <p>اكتب العدد الذي تريد توفيره من كل جائزة. ينقص العدد المتبقي تلقائيًا بعد كل فوز.</p>
     <div className="prizeManageList">{(data.prizes||[]).map(prize=><div className="prizeManageItem" key={prize.id}>
-      <div className="prizeManageHead"><strong>{prize.name}</strong><span className={Number(prize.remaining)>0&&prize.enabled?'prizeAvailable':'prizeUnavailable'}>{prize.enabled?'مفعلة':'متوقفة'}</span></div>
-      <div className="prizeManageMeta">الفائزون حتى الآن: {Math.max(0,Number(prize.quantity||0)-Number(prize.remaining||0))} · المتبقي: <b>{prize.remaining}</b> من {prize.quantity}</div>
-      <div className="prizeManageFields">
-        <label>العدد الإجمالي للفائزين<input type="number" min="0" step="1" value={prize.quantity} onChange={e=>setData({...data,prizes:data.prizes.map(x=>x.id===prize.id?{...x,quantity:e.target.value}:x)})}/></label>
-        <label>وزن الظهور في السحب<input type="number" min="0" step="1" value={prize.weight} onChange={e=>setData({...data,prizes:data.prizes.map(x=>x.id===prize.id?{...x,weight:e.target.value}:x)})}/></label>
-        <label className="prizeEnabled"><input type="checkbox" checked={prize.enabled!==false} onChange={e=>setData({...data,prizes:data.prizes.map(x=>x.id===prize.id?{...x,enabled:e.target.checked}:x)})}/> تفعيل هذه الجائزة</label>
-      </div>
-      <button className="primary prizeSave" disabled={prizeBusy===prize.id} onClick={()=>savePrize(prize)}>{prizeBusy===prize.id?'جارٍ الحفظ…':'حفظ إعدادات الجائزة'}</button>
+      <strong className="prizeManageName">{prize.name}</strong>
+      <div className="prizeManageMeta">المتبقي حاليًا: <b>{prize.remaining}</b> من {prize.quantity}</div>
+      <label className="prizeQuantityLabel">عدد الجوائز<input type="number" min="0" step="1" value={prize.quantity} onChange={e=>setData({...data,prizes:data.prizes.map(x=>x.id===prize.id?{...x,quantity:e.target.value}:x)})}/></label>
+      <button className="primary prizeSave" disabled={prizeBusy===prize.id} onClick={()=>savePrize(prize)}>{prizeBusy===prize.id?'جارٍ الحفظ…':'حفظ العدد'}</button>
     </div>)}</div>
-    <div className="prizeAddBox">
-      <h3>إضافة جائزة جديدة</h3>
-      <div className="prizeManageFields">
-        <label>اسم الجائزة<input value={prizeDraft.name} onChange={e=>setPrizeDraft({...prizeDraft,name:e.target.value})} placeholder="مثال: قسيمة شراء"/></label>
-        <label>نوع الجائزة<select value={prizeDraft.type} onChange={e=>setPrizeDraft({...prizeDraft,type:e.target.value})}><option value="voucher">قسيمة شراء</option><option value="product">جائزة عينية</option><option value="message">رسالة</option><option value="link">رابط</option></select></label>
-        <label>تفاصيل الجائزة<input value={prizeDraft.value} onChange={e=>setPrizeDraft({...prizeDraft,value:e.target.value})} placeholder="مثال: قسيمة بقيمة 500 دج"/></label>
-        <label>عدد الفائزين المسموح<input type="number" min="0" step="1" value={prizeDraft.quantity} onChange={e=>setPrizeDraft({...prizeDraft,quantity:e.target.value})}/></label>
-        <label>وزن الظهور في السحب<input type="number" min="0" step="1" value={prizeDraft.weight} onChange={e=>setPrizeDraft({...prizeDraft,weight:e.target.value})}/></label>
-        <label>رابط الجائزة (اختياري)<input value={prizeDraft.link} onChange={e=>setPrizeDraft({...prizeDraft,link:e.target.value})} placeholder="https://..."/></label>
-      </div>
-      <button className="primary" disabled={prizeBusy==='new'} onClick={addPrize}>{prizeBusy==='new'?'جارٍ إضافة الجائزة…':'إضافة الجائزة'}</button>
-    </div>
-    <small className="prizeHelp">ملاحظة: وزن الظهور يحدد فرصة الجائزة مقارنة بباقي الجوائز المفعلة، وليس عدد الفائزين. العدد الإجمالي هو الحد الأقصى للفائزين بهذه الجائزة.</small>
    </div>
    <div className="adminCard formCard"><h2>🖼️ مظهر المفاجأة</h2><p>هذه الوسائط تظهر في صفحة المفاجأة. GIF مدعوم.</p><div className="two"><label>صورة/GIF قبل الفوز<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" disabled={mediaBusy==='before'} onChange={e=>uploadMedia('before',e.target.files?.[0])}/>{data.beforeMedia&&<img className="adminMediaPreview" src={data.beforeMedia} alt="قبل الفوز"/>}<span><input type="checkbox" checked={data.beforeEnabled!==false} onChange={e=>setData({...data,beforeEnabled:e.target.checked})}/> إظهارها</span></label><label>صورة/GIF عند الفوز<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" disabled={mediaBusy==='win'} onChange={e=>uploadMedia('win',e.target.files?.[0])}/>{data.winMedia&&<img className="adminMediaPreview" src={data.winMedia} alt="عند الفوز"/>}<span><input type="checkbox" checked={data.winEnabled!==false} onChange={e=>setData({...data,winEnabled:e.target.checked})}/> إظهارها</span></label></div></div>
    <div className="adminCard formCard saveSettingsCard"><h2>💾 حفظ الإعدادات</h2><p>احفظ جميع إعدادات المفاجأة ومظهرها دفعة واحدة.</p><div className="two"><button className="primary" onClick={saveAll}>{saveState==='saving'?'جارٍ الحفظ…':saveState==='saved'?'✓ تم الحفظ':saveState==='error'?'إعادة المحاولة':'حفظ الإعدادات'}</button><a className="primary" href={previewUrl} target="_blank" rel="noreferrer">👁️ مشاهدة صفحة المفاجأة</a></div></div>
