@@ -65,6 +65,7 @@ function Admin(){
  const saveAll=async()=>{setSaveState('saving');try{await updateSettings({...data.settings,beforeEnabled:data.beforeEnabled!==false,winEnabled:data.winEnabled!==false});setSaveState('saved');setTimeout(()=>setSaveState(''),2200);}catch(e){setSaveState('error');alert(e.message);}};
  const claim=async p=>{await api(`/api/admin/plays/${p.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({claimed:!p.claimed})});const r=await api('/api/admin/plays');setPlays(r);};
  const savePrize=async prize=>{const quantity=Math.max(0,Math.floor(Number(prize.quantity)||0));setPrizeBusy(prize.id);try{await api(`/api/admin/prizes/${prize.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({quantity})});await load();}catch(e){alert(e.message);}finally{setPrizeBusy('');}};
+ const resetCampaign=async()=>{if(!window.confirm('سيتم حذف جميع سجلات السحب التجريبية، وإلغاء حظر عناوين IP المؤقتة، وإعادة جائزة 500 دج إلى 5 جوائز كاملة. هل تريد المتابعة؟'))return;setPrizeBusy('reset');try{const r=await api('/api/admin/promotion/reset-trials',{method:'POST'});await load();alert(`تمت إعادة ضبط المسابقة. حُذفت ${r.clearedPlays} سجلات، وأصبحت جائزة ${r.prizeName} متاحة ${r.remaining} من ${r.quantity}.`);}catch(e){alert(e.message||'تعذرت إعادة الضبط.');}finally{setPrizeBusy('');}};
  const uploadMedia=async(kind,file)=>{if(!file)return;setMediaBusy(kind);try{const dataUrl=await new Promise((resolve,reject)=>{const fr=new FileReader();fr.onload=()=>resolve(fr.result);fr.onerror=reject;fr.readAsDataURL(file);});const r=await api('/api/admin/promotion/media',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,data:dataUrl,mime:file.type})});setData({...data,[kind==='before'?'beforeMedia':'winMedia']:r.url});}catch(e){alert(e.message);}finally{setMediaBusy('');}};
  const logout=async()=>{await api('/api/auth/logout',{method:'POST'});setLogged(false);};
  const previewUrl=`/surprise?token=${encodeURIComponent(data.qrToken||'')}`;
@@ -79,6 +80,17 @@ function Admin(){
       <label className="prizeQuantityLabel">عدد الجوائز<input type="number" min="0" step="1" value={prize.quantity} onChange={e=>setData({...data,prizes:data.prizes.map(x=>x.id===prize.id?{...x,quantity:e.target.value}:x)})}/></label>
       <button className="primary prizeSave" disabled={prizeBusy===prize.id} onClick={()=>savePrize(prize)}>{prizeBusy===prize.id?'جارٍ الحفظ…':'حفظ العدد'}</button>
     </div>)}</div>
+   </div>
+   <div className="adminCard formCard ipProtectionCard">
+    <h2>🛡️ منع تكرار الفوز</h2>
+    <p>بعد فوز أي عنوان IP بجائزة حقيقية، لن يستطيع نفس العنوان الفوز بجائزة أخرى لمدة <b>24 ساعة</b>؛ ستظهر له رسالة «حظ أوفر» بدل صورة الفوز.</p>
+    <small>تُحفظ بصمة مشفّرة للعنوان بدل تخزين IP الخام. قد يشمل المنع أشخاصًا آخرين على شبكة Wi‑Fi نفسها، كما أن تغيير الشبكة أو استخدام VPN قد يغيّر عنوان IP.</small>
+   </div>
+   <div className="adminCard formCard resetCampaignCard">
+    <h2>🔄 تجهيز المسابقة للانطلاق</h2>
+    <p>يمسح سجلات السحب التجريبية، ويلغي الحظر المؤقت الناتج عن الاختبارات، ويعيد جائزة 500 دج إلى <b>5 من 5</b>.</p>
+    <button className="resetCampaignButton" disabled={prizeBusy==='reset'} onClick={resetCampaign}>{prizeBusy==='reset'?'جارٍ تنظيف التجارب…':'تنظيف التجارب وبدء المسابقة من الصفر'}</button>
+    <small>هذا الإجراء يحذف سجل المشاركات الحالي بالكامل. استخدمه الآن قبل بدء الحملة الفعلية فقط.</small>
    </div>
    <div className="adminCard formCard"><h2>🖼️ مظهر المفاجأة</h2><p>هذه الوسائط تظهر في صفحة المفاجأة. GIF مدعوم.</p><div className="two"><label>صورة/GIF قبل الفوز<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" disabled={mediaBusy==='before'} onChange={e=>uploadMedia('before',e.target.files?.[0])}/>{data.beforeMedia&&<img className="adminMediaPreview" src={data.beforeMedia} alt="قبل الفوز"/>}<span><input type="checkbox" checked={data.beforeEnabled!==false} onChange={e=>setData({...data,beforeEnabled:e.target.checked})}/> إظهارها</span></label><label>صورة/GIF عند الفوز<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" disabled={mediaBusy==='win'} onChange={e=>uploadMedia('win',e.target.files?.[0])}/>{data.winMedia&&<img className="adminMediaPreview" src={data.winMedia} alt="عند الفوز"/>}<span><input type="checkbox" checked={data.winEnabled!==false} onChange={e=>setData({...data,winEnabled:e.target.checked})}/> إظهارها</span></label></div></div>
    <div className="adminCard formCard saveSettingsCard"><h2>💾 حفظ الإعدادات</h2><p>احفظ جميع إعدادات المفاجأة ومظهرها دفعة واحدة.</p><div className="two"><button className="primary" onClick={saveAll}>{saveState==='saving'?'جارٍ الحفظ…':saveState==='saved'?'✓ تم الحفظ':saveState==='error'?'إعادة المحاولة':'حفظ الإعدادات'}</button><a className="primary" href={previewUrl} target="_blank" rel="noreferrer">👁️ مشاهدة صفحة المفاجأة</a></div></div>
