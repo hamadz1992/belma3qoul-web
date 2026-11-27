@@ -14,6 +14,18 @@ const TYPES={voucher:'قسيمة شراء',link:'رابط',message:'رسالة',
 
 async function api(path,options={}){const r=await fetch(path,options);const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);return data;}
 function Logo(){return <div className="brand"><strong>بزار</strong><span>كل شيء بالمعقول</span></div>}
+function toDateTimeLocal(value){
+ if(!value)return '';
+ const d=new Date(value);
+ if(Number.isNaN(d.getTime()))return '';
+ const pad=n=>String(n).padStart(2,'0');
+ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function localDateTimeToUtc(value){
+ if(!value)return null;
+ const d=new Date(value);
+ return Number.isNaN(d.getTime())?null:d.toISOString();
+}
 function Layout({children}){return <div className="site">{children}</div>}
 
 function Home(){return <Layout><main className="home">
@@ -62,7 +74,7 @@ function Admin(){
  useEffect(()=>{api('/api/auth/me').then(r=>{setLogged(r.authenticated);if(r.authenticated)load();});},[]);
  if(!logged)return <Login onLogin={()=>{setLogged(true);load();}}/>; if(!data)return <div className="loading">جارٍ تحميل لوحة التحكم…</div>;
  const updateSettings=async(patch)=>{const r=await api('/api/admin/promotion/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});setData({...data,settings:{...data.settings,...r.data},beforeMedia:r.beforeMedia||data.beforeMedia,winMedia:r.winMedia||data.winMedia,beforeEnabled:r.beforeEnabled??data.beforeEnabled,winEnabled:r.winEnabled??data.winEnabled});};
- const saveAll=async()=>{setSaveState('saving');try{await updateSettings({...data.settings,beforeEnabled:data.beforeEnabled!==false,winEnabled:data.winEnabled!==false});setSaveState('saved');setTimeout(()=>setSaveState(''),2200);}catch(e){setSaveState('error');alert(e.message);}};
+ const saveAll=async()=>{setSaveState('saving');try{await updateSettings({...data.settings,campaignStart:localDateTimeToUtc(data.settings.campaignStart),campaignEnd:localDateTimeToUtc(data.settings.campaignEnd),beforeEnabled:data.beforeEnabled!==false,winEnabled:data.winEnabled!==false});setSaveState('saved');setTimeout(()=>setSaveState(''),2200);}catch(e){setSaveState('error');alert(e.message);}};
  const claim=async p=>{await api(`/api/admin/plays/${p.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({claimed:!p.claimed})});const r=await api('/api/admin/plays');setPlays(r);};
  const savePrize=async prize=>{const quantity=Math.max(0,Math.floor(Number(prize.quantity)||0));setPrizeBusy(prize.id);try{await api(`/api/admin/prizes/${prize.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({quantity})});await load();}catch(e){alert(e.message);}finally{setPrizeBusy('');}};
  const resetCampaign=async()=>{if(!window.confirm('سيتم حذف جميع سجلات السحب التجريبية، وإلغاء حظر عناوين IP المؤقتة، وإعادة جائزة 500 دج إلى 5 جوائز كاملة. هل تريد المتابعة؟'))return;setPrizeBusy('reset');try{const r=await api('/api/admin/promotion/reset-trials',{method:'POST'});await load();alert(`تمت إعادة ضبط المسابقة. حُذفت ${r.clearedPlays} سجلات، وأصبحت جائزة ${r.prizeName} متاحة ${r.remaining} من ${r.quantity}.`);}catch(e){alert(e.message||'تعذرت إعادة الضبط.');}finally{setPrizeBusy('');}};
@@ -70,7 +82,7 @@ function Admin(){
  const logout=async()=>{await api('/api/auth/logout',{method:'POST'});setLogged(false);};
  const previewUrl=`/surprise?token=${encodeURIComponent(data.qrToken||'')}`;
  const campaignForm=<>
-   <div className="adminCard formCard"><h2>⚙️ إعدادات المفاجأة</h2><label><input type="checkbox" checked={data.settings.enabled} onChange={e=>setData({...data,settings:{...data.settings,enabled:e.target.checked}})}/> المفاجأة مفعلة</label><label>عنوان شاشة المفاجأة<input value={data.settings.title} onChange={e=>setData({...data,settings:{...data.settings,title:e.target.value}})}/></label><label>الرسالة<input value={data.settings.message} onChange={e=>setData({...data,settings:{...data.settings,message:e.target.value}})}/></label><label>نص زر المفاجأة<input value={data.settings.buttonText||'اكتشف جائزتي 🎁'} onChange={e=>setData({...data,settings:{...data.settings,buttonText:e.target.value}})}/></label><label>عدد المحاولات لكل زائر<input type="number" min="1" value={data.settings.attemptsPerVisitor} onChange={e=>setData({...data,settings:{...data.settings,attemptsPerVisitor:e.target.value}})}/></label><div className="two"><label>بداية الحملة<input type="datetime-local" value={data.settings.campaignStart||''} onChange={e=>setData({...data,settings:{...data.settings,campaignStart:e.target.value||null}})}/></label><label>نهاية الحملة<input type="datetime-local" value={data.settings.campaignEnd||''} onChange={e=>setData({...data,settings:{...data.settings,campaignEnd:e.target.value||null}})}/></label></div></div>
+   <div className="adminCard formCard"><h2>⚙️ إعدادات المفاجأة</h2><label><input type="checkbox" checked={data.settings.enabled} onChange={e=>setData({...data,settings:{...data.settings,enabled:e.target.checked}})}/> المفاجأة مفعلة</label><label>عنوان شاشة المفاجأة<input value={data.settings.title} onChange={e=>setData({...data,settings:{...data.settings,title:e.target.value}})}/></label><label>الرسالة<input value={data.settings.message} onChange={e=>setData({...data,settings:{...data.settings,message:e.target.value}})}/></label><label>نص زر المفاجأة<input value={data.settings.buttonText||'اكتشف جائزتي 🎁'} onChange={e=>setData({...data,settings:{...data.settings,buttonText:e.target.value}})}/></label><label>عدد المحاولات لكل زائر<input type="number" min="1" value={data.settings.attemptsPerVisitor} onChange={e=>setData({...data,settings:{...data.settings,attemptsPerVisitor:e.target.value}})}/></label><div className="two"><label>بداية الحملة<input type="datetime-local" value={toDateTimeLocal(data.settings.campaignStart)} onChange={e=>setData({...data,settings:{...data.settings,campaignStart:e.target.value||null}})}/></label><label>نهاية الحملة<input type="datetime-local" value={toDateTimeLocal(data.settings.campaignEnd)} onChange={e=>setData({...data,settings:{...data.settings,campaignEnd:e.target.value||null}})}/></label></div></div>
    <div className="adminCard formCard prizeManager">
     <h2>🎁 التحكم في عدد الجوائز</h2>
     <p>حدد عدد الفائزين بجائزتك. بعد نفاد الكمية المحددة، سيظهر «حظ أوفر» تلقائيًا لكل المشاركين اللاحقين.</p>
