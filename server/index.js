@@ -6,8 +6,14 @@ import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 
 const __dirname=path.dirname(fileURLToPath(import.meta.url));
-const root=path.join(__dirname,'..');const dist=path.join(root,'dist');const dataDir=path.join(root,'data');const mediaDir=path.join(dataDir,'media');
-const siteFile=path.join(dataDir,'site.json');const promotionFile=path.join(dataDir,'promotions.json');fs.mkdirSync(mediaDir,{recursive:true});
+const root=path.join(__dirname,'..');const dist=path.join(root,'dist');const seedDataDir=path.join(root,'data');const dataDir=path.resolve(process.env.DATA_DIR||seedDataDir);const mediaDir=path.join(dataDir,'media');
+fs.mkdirSync(dataDir,{recursive:true});
+if(path.resolve(dataDir)!==path.resolve(seedDataDir)){
+  for(const name of ['site.json','promotions.json']){const source=path.join(seedDataDir,name),target=path.join(dataDir,name);if(!fs.existsSync(target)&&fs.existsSync(source))fs.copyFileSync(source,target);}
+  const seedMediaDir=path.join(seedDataDir,'media');if(fs.existsSync(seedMediaDir))fs.cpSync(seedMediaDir,mediaDir,{recursive:true,force:false,errorOnExist:false});
+}
+fs.mkdirSync(mediaDir,{recursive:true});
+const siteFile=path.join(dataDir,'site.json');const promotionFile=path.join(dataDir,'promotions.json');
 const siteDefaults={siteName:'كل شيء بالمعقول',news:'تابعوا أحدث منشورات المحل',featured:'آخر المنشورات',surpriseTitle:'مفاجأتك بانتظارك 🎁',surpriseMessage:'امسح QR واكتشف مفاجأتك.',stats:{sales:0,products:0,customers:0,stock:0},links:[],updatedAt:new Date().toISOString()};
 const promotionDefaults={settings:{enabled:true,title:'مفاجأتك بانتظارك 🎁',message:'امسح QR واكتشف مفاجأتك.',buttonText:'اكتشف جائزتي 🎁',attemptsPerVisitor:1,campaignStart:null,campaignEnd:null},prizes:[],plays:[],qrToken:'',beforeMedia:'',winMedia:'',beforeEnabled:true,winEnabled:true,updatedAt:null};
 function load(file,fallback){try{return {...fallback,...JSON.parse(fs.readFileSync(file,'utf8'))};}catch{fs.writeFileSync(file,JSON.stringify(fallback,null,2));return structuredClone(fallback);}}
