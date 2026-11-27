@@ -76,3 +76,10 @@
 .prizeManager .prizeQuantityLabel input{width:100%;min-width:0;border:1px solid #d3dbd5;border-radius:9px;padding:9px;background:#fff;min-height:40px}
 .prizeManager .prizeSave{width:100%;margin-top:10px;min-height:38px;padding:8px 12px;font-size:12px}
 @media(max-width:700px){.prizeManager .prizeManageList{grid-template-columns:1fr}}
+
+
+.ipProtectionCard p,.resetCampaignCard p{margin:0;color:#42544a;line-height:1.8}
+.ipProtectionCard small,.resetCampaignCard small{color:#69786f;font-size:11px;line-height:1.8}
+.resetCampaignButton{width:100%;min-height:44px;border:1px solid #b42318;border-radius:10px;background:#fff3f1;color:#a32119;font:inherit;font-size:13px;font-weight:900;cursor:pointer;padding:10px 14px}
+.resetCampaignButton:hover{background:#ffe8e4}
+.resetCampaignButton:disabled{opacity:.6;cursor:wait}
