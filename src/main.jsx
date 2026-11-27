@@ -26,30 +26,22 @@ function Home(){return <Layout><main className="home">
 
 function Surprise(){
  const [state,setState]=useState('ready');
- const [result,setResult]=useState(null);
  const [error,setError]=useState('');
  const [pub,setPub]=useState(null);
  useEffect(()=>{api('/api/promotion/public').then(setPub).catch(e=>setError(e.message));},[]);
- const play=async()=>{setState('loading');setError('');try{const r=await api('/api/promotion/play',{method:'POST'});setResult(r.play);setState('done');}catch(e){setError(e.message);setState('error');}};
- const prize=result?.prize;
+ const play=async()=>{setState('loading');setError('');try{const r=await api('/api/promotion/play',{method:'POST'});setState('done');}catch(e){setError(e.message);setState('error');}};
  const fireworkParticles=Array.from({length:56},(_,i)=>({i,left:8+((i*17)%84),top:8+((i*29)%68),x:Math.cos(i*0.72)*(55+(i%7)*14),y:Math.sin(i*0.72)*(55+(i%6)*16),delay:(i%12)*0.035}));
  return <div className="surprisePage"><style>{`
  .surpriseButton{min-width:220px;cursor:pointer}
- .winOverlay{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:20px;background:rgba(3,24,17,.72);backdrop-filter:blur(5px);animation:winFade .25s ease-out}
- .winModal{position:relative;width:min(560px,100%);max-height:90vh;overflow:auto;background:#fff;border:2px solid #d6aa43;border-radius:28px;padding:28px 22px;text-align:center;box-shadow:0 30px 100px rgba(0,0,0,.45);animation:winPop .45s cubic-bezier(.2,.9,.2,1.2)}
- .winModal .winIcon{font-size:64px;line-height:1;margin-bottom:8px;animation:winBounce .8s ease-in-out infinite alternate}
- .winModal h2{margin:8px 0;color:#064b32;font-size:30px}
- .winModal .winPrize{font-size:24px;font-weight:900;color:#b98b24;margin:10px 0}
- .winModal .winMedia{display:block;width:100%;max-height:46vh;object-fit:contain;border-radius:18px;margin:14px auto}
- .winClose{position:absolute;top:10px;left:12px;width:38px;height:38px;border:0;border-radius:50%;background:#f2eee4;color:#064b32;font-size:24px;cursor:pointer}
+ .winOverlay{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:0;background:rgba(0,0,0,.82);animation:winFade .2s ease-out}
+ .winModal{position:static;display:flex;align-items:center;justify-content:center;width:100vw;height:100vh;max-height:100vh;overflow:visible;background:transparent;border:0;border-radius:0;padding:0;box-shadow:none}
+ .winModal .winMedia{display:block;width:auto;height:auto;max-width:96vw;max-height:94vh;object-fit:contain;border:0;border-radius:12px;margin:0 auto;box-shadow:none}
+ .winClose{position:fixed;top:14px;left:14px;z-index:10002;width:40px;height:40px;border:0;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:26px;line-height:1;cursor:pointer}
  .fireworks{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:10000}
  .fireParticle{position:absolute;width:7px;height:7px;border-radius:50%;background:hsl(var(--h) 95% 62%);box-shadow:0 0 12px 3px hsl(var(--h) 95% 62%);left:var(--left);top:var(--top);animation:fireBurst 1.25s cubic-bezier(.15,.7,.25,1) var(--delay) both}
- .celebrate{font-size:18px;font-weight:900;color:#064b32;margin:6px 0 12px}
  @keyframes fireBurst{0%{transform:translate(0,0) scale(1);opacity:1}75%{opacity:1}100%{transform:translate(var(--x),var(--y)) scale(.15);opacity:0}}
  @keyframes winFade{from{opacity:0}to{opacity:1}}
- @keyframes winPop{from{transform:scale(.72) translateY(20px);opacity:0}to{transform:scale(1) translateY(0);opacity:1}}
- @keyframes winBounce{from{transform:translateY(0) rotate(-4deg)}to{transform:translateY(-8px) rotate(4deg)}}
- `}</style><div className="surpriseCard"><div className={`gift ${state==='done'?'opened':''}`}>{state==='done'?'🎉':'🎁'}</div>{state!=='done'?<><h1>{pub?.title||'مفاجأتك بانتظارك'}</h1><p>{pub?.message||'اضغط الزر واكتشف جائزتك.'}</p>{pub?.beforeMedia&&pub?.beforeEnabled&&<img className="surpriseMedia" src={pub.beforeMedia} alt="المفاجأة"/>}<button className="primary surpriseButton" disabled={state==='loading'} onClick={play}>{state==='loading'?'جارٍ السحب…':(pub?.buttonText||'اكتشف جائزتي 🎁')}</button>{error&&<div className="error">{error}</div>}</>:<p>جاري عرض نتيجتك…</p>}</div>{state==='done'&&<><div className="fireworks">{fireworkParticles.map(p=><i key={p.i} className="fireParticle" style={{'--left':`${p.left}%`,'--top':`${p.top}%`,'--x':`${p.x}px`,'--y':`${p.y}px`,'--delay':`${p.delay}s`,'--h':`${(p.i*47)%360}`}}/> )}</div><div className="winOverlay"><div className="winModal"><button className="winClose" aria-label="إغلاق" onClick={()=>setState('ready')}>×</button><div className="winIcon">🎉</div><div className="celebrate">🎆 مبروك! احتفال الفوز 🎆</div>{pub?.winMedia&&pub?.winEnabled&&<img className="winMedia" src={pub.winMedia} alt="صورة الفوز"/>}<span className="eyebrow">BELMA3QOUL • مبروك</span><h2>{prize?.name}</h2><p className="winPrize">{prize?.value}</p>{prize?.type==='link'&&prize.link&&<a className="primary" href={prize.link} target="_blank" rel="noreferrer">فتح الرابط ↗</a>}<small className="hint">احتفظ بهذه النتيجة عند الحاجة.</small></div></div></>}</div>
+ `}</style><div className="surpriseCard"><div className={`gift ${state==='done'?'opened':''}`}>{state==='done'?'🎉':'🎁'}</div>{state!=='done'?<><h1>{pub?.title||'مفاجأتك بانتظارك'}</h1><p>{pub?.message||'اضغط الزر واكتشف جائزتك.'}</p>{pub?.beforeMedia&&pub?.beforeEnabled&&<img className="surpriseMedia" src={pub.beforeMedia} alt="المفاجأة"/>}<button className="primary surpriseButton" disabled={state==='loading'} onClick={play}>{state==='loading'?'جارٍ السحب…':(pub?.buttonText||'اكتشف جائزتي 🎁')}</button>{error&&<div className="error">{error}</div>}</>:<p>جاري عرض نتيجتك…</p>}</div>{state==='done'&&<><div className="fireworks">{fireworkParticles.map(p=><i key={p.i} className="fireParticle" style={{'--left':`${p.left}%`,'--top':`${p.top}%`,'--x':`${p.x}px`,'--y':`${p.y}px`,'--delay':`${p.delay}s`,'--h':`${(p.i*47)%360}`}}/> )}</div><div className="winOverlay"><div className="winModal"><button className="winClose" aria-label="إغلاق" onClick={()=>setState('ready')}>×</button>{pub?.winMedia&&pub?.winEnabled&&<img className="winMedia" src={pub.winMedia} alt="صورة الفوز"/>}</div></div></>}</div>
 }
 
 function Login({onLogin}){const [pass,setPass]=useState('');const [error,setError]=useState('');const submit=async()=>{try{await api('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pass})});onLogin();}catch(e){setError(e.message||'كلمة المرور غير صحيحة');}};return <div className="login"><div className="loginCard"><Logo/><span className="eyebrow">ADMIN PANEL</span><h1>لوحة التحكم</h1><p>إدارة المسابقة والجوائز والفائزين.</p><input type="password" autoFocus placeholder="كلمة المرور" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()}/>{error&&<div className="error">{error}</div>}<button className="primary full" onClick={submit}>دخول</button><a href="/">العودة للموقع</a></div></div>}
