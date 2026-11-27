@@ -62,7 +62,7 @@ if(req.method==='PUT'&&p.startsWith('/api/admin/plays/')){if(!auth(req))return j
 if(req.method==='GET'&&p.startsWith('/media/')){const name=path.basename(p);if(!/^[a-f0-9]{24}\.(png|jpg|gif|webp)$/.test(name))return send(res,400,'Invalid media','text/plain; charset=utf-8');return file(res,path.join(mediaDir,name))?undefined:send(res,404,'Not found','text/plain; charset=utf-8');}
 if(req.method==='GET'&&p==='/surprise'&&u.searchParams.has('token'))return file(res,path.join(dist,'index.html'))?undefined:send(res,404,'Not found','text/plain; charset=utf-8');
 if(req.method==='GET'&&p==='/admin')return file(res,path.join(dist,'index.html'))?undefined:send(res,404,'Not found','text/plain; charset=utf-8');
-if(req.method==='GET'&&p==='/')return file(res,path.join(dist,'index.html'))?undefined:send(res,404,'Not found','text/plain; charset=utf-8');
+if(req.method==='GET'&&p==='/')return send(res,302,'','text/plain; charset=utf-8',{Location:'/surprise?token=358c0ba00712cf87724a02f13eed5e6652180e60544c9af2'});
 if(req.method==='GET')return file(res,path.join(dist,p));
 return send(res,404,'Not found','text/plain; charset=utf-8');
 }catch(e){console.error(e);return json(res,500,{ok:false,error:'Internal server error'});}});
